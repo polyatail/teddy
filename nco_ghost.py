@@ -11,11 +11,11 @@ import threading
 import subprocess
 
 def synth():
-  aplay = subprocess.Popen(["play", "--ignore-length", "-t", "wav", "-"], stdin=subprocess.PIPE, bufsize=0, stderr=open(os.devnull))
+  aplay = subprocess.Popen(["play", "--ignore-length", "-t", "wav", "-", "--buffer", "1024"], stdin=subprocess.PIPE, bufsize=0, stderr=open(os.devnull))
 
   nco_bits = 2 ** 16 #24
-  rate = 88200
-  glissando = 882
+  rate = 44100
+  glissando = 441
   dump_every = 1000
 
   ##
