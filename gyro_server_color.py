@@ -114,6 +114,5 @@ if __name__ == "__main__":
   dev.open(0,0)
 
   server = SocketServer.TCPServer((host, port), MyTCPHandler)
-  server.socket.setblocking(0)
   server.serve_forever()
 

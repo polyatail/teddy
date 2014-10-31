@@ -1,3 +1,4 @@
+import select
 from numpy import diff
 import socket
 import struct
@@ -14,9 +15,10 @@ def synth():
   aplay = subprocess.Popen(["play", "--ignore-length", "-t", "wav", "-", "--buffer", "1024"], stdin=subprocess.PIPE, bufsize=0, stderr=open(os.devnull))
 
   nco_bits = 2 ** 16 #24
-  rate = 44100
-  glissando = 441
+  rate = 88200
+  glissando = 881
   dump_every = 1000
+  idle_after = 60 * rate
 
   ##
 
@@ -57,7 +59,11 @@ def synth():
   r_trans = glissando
 
   dump_count = 0
-  queue_count = 0
+  empty_count = 0
+
+  idle = False
+  idle_count = 1
+  idle_random = 1
 
   frame_buf = [0] * dump_every
 
@@ -68,6 +74,34 @@ def synth():
     try:
       q_get = q.get(block=False)
 
+      if q_get == "idle":
+        idle = True
+      elif q_get == "wakeup":
+        idle = False
+      elif idle:
+        sys.stderr.write("\nwakeup: control thread sending data\n")
+        idle = False
+
+      empty_count = 0
+    except Queue.Empty:
+      q_get = False
+
+      if idle:
+        if idle_count % idle_random == 0:
+          q_get = ((random.randint(0, 1), random.randint(110, 880)))
+          idle_random = random.randint(1, 30) * rate / 100.0
+          idle_count = 1
+        else:
+          idle_count += 1
+      else:
+        # if there's no data for idle_after cycles, go into idle mode
+        if empty_count == idle_after:
+          sys.stderr.write("\nidle: no data from control thread\n")
+          idle = True
+
+        empty_count += 1
+
+    if q_get:
       if q_get[0] == 0:
         l_tar_freq = q_get[1]
         l_pre_freq = l_cur_freq
@@ -76,8 +110,6 @@ def synth():
         r_tar_freq = q_get[1]
         r_pre_freq = r_cur_freq
         r_trans = 0
-    except Queue.Empty:
-      pass
 
     if l_trans < glissando:
         l_cur_freq = l_pre_freq * (1 - ramp[l_trans]) + l_tar_freq * ramp[l_trans]
@@ -107,7 +139,7 @@ def synth():
       s_time = time.time()
 
     if dump_count % 100 == 0:
-      sys.stderr.write("\rl_cur_freq: %.01f r_cur_freq: %.01f fps: %.01f" % (l_cur_freq, r_cur_freq, fps))
+      sys.stderr.write("\rl_cur_freq: %.01f r_cur_freq: %.01f fps: %-8.01f empty: %d" % (l_cur_freq, r_cur_freq, fps, empty_count))
 
 def generate_scales(scales):
   # frequencies of notes across several octaves beginning with low C
@@ -158,6 +190,8 @@ def listener():
 
     gyro = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+    gyro.settimeout(1)
+
     try:
       result = gyro.connect(("192.168.1.1", 9999))
     except:
@@ -178,27 +212,40 @@ def listener():
   keychange_tstamp = time.time()
   idle = False
 
+  x, y = 0.1, 0.1
   vals = [0] * 100
   dy_hist = [0] * 1000
+
+  no_data_counter = 0
+
+  last_left_freq = 0
+  last_right_freq = 0
 
   connect()
 
   while True:
-    try:
+    s_read, _, _ = select.select([gyro], [], [], 0)
+
+    if len(s_read) > 0:
       data = gyro.recv(16)
-    except:
-      data = ""
+      no_data_counter = 0
+    else:
+      no_data_counter += 1
 
-    if data == "":
-      sys.stderr.write("\nerror: disconnected from raspi\n")
-
-      while True:
-        if connect() != False:
-          break
-
-        time.sleep(1)
-
-      sys.stderr.write("\nsuccessfully reconnected to raspi\n")
+      if no_data_counter == 1000:
+        sys.stderr.write("\nidle: no data from raspi\n")
+        q.put("idle")
+  
+        while True:
+          if connect() != False:
+            break
+  
+          time.sleep(1)
+  
+        sys.stderr.write("\nwakeup: resumed connectiong to raspi\n")
+        q.put("wakeup")
+      else:
+        time.sleep(0.001)
 
       continue
 
@@ -213,31 +260,51 @@ def listener():
     dy_hist = dy_hist[1:]
 
     if idle:
-      q.put((0, random.randint(100, 800)))
-      q.put((1, random.randint(100, 800)))
-      #time.sleep(random.randrange(1, 100) / 1000.0)
+      try:
+        gyro.send("".join([struct.pack("B", v) for v in reds[0] + reds[0]]))
+      except:
+        pass
 
-      gyro.send("".join([struct.pack("B", v) for v in reds[0] + reds[0]]))
       reds = reds[1:] + [reds[0]]
 
       # are we no longer idle?
       if max(dy_hist) > 2:
-        gyro.send("".join([struct.pack("B", v) for v in colors[scale]]))
         idle = False
+        sys.stderr.write("\nwakeup: gyro detected movement\n")
+        q.put("wakeup")
+
+        try:
+          gyro.send("".join([struct.pack("B", v) for v in colors[scale]]))
+        except:
+          pass
     else:
-      q.put((0, freqmod(x, 440, 0)))
-      q.put((1, freqmod(x, 440, add)))
+      new_left_freq = freqmod(x, 440, 0)
+      new_right_freq = freqmod(x, 440, add)
+
+      if new_left_freq != last_left_freq:
+        last_left_freq = new_left_freq
+        q.put((0, new_left_freq))
+
+      if new_right_freq != last_right_freq:
+        last_right_freq = new_right_freq
+        q.put((1, new_right_freq))
 
       # should we change scales?
       if (dy > 60 or dy < -60) and time.time() - keychange_tstamp > 0.5:
         scale = all_scales.keys()[(all_scales.keys().index(scale)+1)%len(all_scales.keys())]
         keychange_tstamp = time.time()
-        gyro.send("".join([struct.pack("B", v) for v in colors[scale]]))
         sys.stderr.write("\nnew scale: %s\n" % scale)
+
+        try:
+          gyro.send("".join([struct.pack("B", v) for v in colors[scale]]))
+        except:
+          pass
 
       # should we become idle?
       if max(dy_hist) < 2:
         reds = [(x, 0, 0) for x in range(1, 255, 5) + range(255, 1, -5)]
+        sys.stderr.write("\nidle: no movement detected from gyro\n")
+        q.put("idle")
         idle = True
 
     time.sleep(0.001)
