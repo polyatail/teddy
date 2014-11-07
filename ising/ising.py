@@ -18,7 +18,7 @@ def energy(x, y, m):
 if __name__ == "__main__":
   width = 100
   height = 100
-  temperature = 50
+  temperature = 0.03
 
   screen_width = 640
   screen_height = 480
@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
   # initialize pygame screen
   pygame.display.init()
-  screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN | pygame.HWSURFACE, 24)
+  screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN | pygame.HWSURFACE, 8)
   screen.fill((0, 0, 0))        
   pygame.display.flip()
 
@@ -35,20 +35,19 @@ if __name__ == "__main__":
   m = numpy.random.random_integers(0, 1, size=(width, height))
   m[m==0] -= 1
   
-  # initialize PIL image
-  img = Image.new("RGB", (width, height), "black")
-  pixels = img.load()
+  # initialize small image
+  img = pygame.Surface((width, height), 0, 8)
  
-  red = (255, 0, 0)
-  blue = (0, 0, 255)
+  c_off = (9, 142, 186)
+  c_on= (9, 244, 186)
 
   for x in range(0, width):
     for y in range(0, height):
-      pixels[x, y] = red if m[x, y] == 1 else blue
+      img.set_at((x, y), c_on if m[x, y] == 1 else c_off)
 
   # main loop
-  for _ in range(1000):
-    try:
+  for frame in range(10):
+    for step in range(10000):
       # pick a random element in matrix
       rand_x = random.randint(0, width-1)
       rand_y = random.randint(0, height-1)
@@ -56,17 +55,13 @@ if __name__ == "__main__":
       # calculate the energy to flip from -1 to 1
       e = energy(rand_x, rand_y, m)
   
-      if e <= 0 or numpy.exp(-1.0 / (temperature * e)) > numpy.random.rand():
+      if e <= 0 or numpy.exp(-1.0 * e / temperature) > numpy.random.rand():
         m[rand_x, rand_y] *= -1
   
-      pixels[rand_x, rand_y] = red if m[rand_x, rand_y] == 1 else blue
-    
-      pygame_img = pygame.image.frombuffer(img.tostring(), (width, height), "RGB")
-      pygame.transform.scale(pygame_img, (screen_width, screen_height), screen)
-      pygame.display.flip()
-    except KeyboardInterrupt:
-      pygame.quit()
-      break
-  else:
-    pygame.quit()
+      img.set_at((rand_x, rand_y), c_on if m[rand_x, rand_y] == 1 else c_off)
+
+    pygame.transform.scale(img, (screen_width, screen_height), screen)
+    pygame.display.flip()
+
+  pygame.quit()
 
