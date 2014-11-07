@@ -1,3 +1,4 @@
+import Image
 import pygame
 import time
 import numpy
@@ -15,29 +16,38 @@ def energy(x, y, m):
   return -2 * m[x,y] * (l + r + u + d)
 
 if __name__ == "__main__":
-  width = 800
-  height = 600
+  width = 100
+  height = 100
   temperature = 50
+
+  screen_width = 640
+  screen_height = 480
+  box_width = int(numpy.floor(float(screen_width) / width))
+  box_height = int(numpy.floor(float(screen_height) / height))
 
   # initialize pygame screen
   pygame.display.init()
-  
-  size = (pygame.display.Info().current_w, pygame.display.Info().current_h)
-  screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN)
-  
+  screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN | pygame.HWSURFACE, 24)
   screen.fill((0, 0, 0))        
-  pygame.display.update()
-   
-  red = (255, 0, 0)
-  blue = (0, 0, 255)
+  pygame.display.flip()
 
   # initialize matrix with random -1 and 1s
   m = numpy.random.random_integers(0, 1, size=(width, height))
   m[m==0] -= 1
+  
+  # initialize PIL image
+  img = Image.new("RGB", (width, height), "black")
+  pixels = img.load()
+ 
+  red = (255, 0, 0)
+  blue = (0, 0, 255)
 
-  running = True
+  for x in range(0, width):
+    for y in range(0, height):
+      pixels[x, y] = red if m[x, y] == 1 else blue
 
-  while running:
+  # main loop
+  for _ in range(1000):
     try:
       # pick a random element in matrix
       rand_x = random.randint(0, width-1)
@@ -47,18 +57,16 @@ if __name__ == "__main__":
       e = energy(rand_x, rand_y, m)
   
       if e <= 0 or numpy.exp(-1.0 / (temperature * e)) > numpy.random.rand():
-        m[rand_x,rand_y] *= -1
+        m[rand_x, rand_y] *= -1
   
-      for x in range(0, width):
-        for y in range(0, height):
-          pygame.draw.rect(screen, red if m[x,y] == 1 else blue, (x, y, x+1, y+1), 0)
-  
-      pygame.display.update()
-  
-      time.sleep(0.1)
+      pixels[rand_x, rand_y] = red if m[rand_x, rand_y] == 1 else blue
+    
+      pygame_img = pygame.image.frombuffer(img.tostring(), (width, height), "RGB")
+      pygame.transform.scale(pygame_img, (screen_width, screen_height), screen)
+      pygame.display.flip()
     except KeyboardInterrupt:
-      running = False
       pygame.quit()
-
-    running = False
+      break
+  else:
+    pygame.quit()
 
