@@ -94,9 +94,9 @@ int main (int argc, char **argv)
       if (y==0) ly = height-1; else ly = y-1;
       if (y==height-1) ry = 0; else ry = y+1;
 
-      energy = (float)2 * m[x][y] * (m[lx][y] + m[rx][y] + m[x][ly] + m[x][ry]);
+      energy = (float)copysign(2, temperature) * m[x][y] * (m[lx][y] + m[rx][y] + m[x][ly] + m[x][ry]);
   
-      if (energy <= 0 || exp(-1.0 * energy / temperature) > ((float)rand() / (float)RAND_MAX))
+      if (energy <= 0 || exp(copysign(energy / temperature, temperature)) > ((float)rand() / (float)RAND_MAX))
       {
         m[x][y] *= -1;
       }
