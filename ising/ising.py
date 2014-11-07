@@ -9,7 +9,7 @@ temperature = 0.03
 
 screen_width = 640
 screen_height = 480
-bitdepth = 8
+bitdepth = 24
 
 energy = lambda x, y, m: -2 * m[x][y] * ((m[x-1][y] if x > 0 else 0) + \
          (m[x+1][y] if x < width-1 else 0) + (m[x][y-1] if y > 0 else 0) + \
@@ -18,8 +18,8 @@ energy = lambda x, y, m: -2 * m[x][y] * ((m[x-1][y] if x > 0 else 0) + \
 if __name__ == "__main__":
   # initialize pygame screen
   pygame.display.init()
-  screen = pygame.display.set_mode((screen_width, screen_height), \
-           pygame.FULLSCREEN | pygame.HWSURFACE, bitdepth)
+  screen = pygame.display.set_mode((screen_width, screen_height), 0, 24)
+#           pygame.FULLSCREEN | pygame.HWSURFACE, bitdepth)
   screen.fill((0, 0, 0))        
   pygame.display.flip()
 
@@ -43,7 +43,7 @@ if __name__ == "__main__":
       img.set_at((x, y), c_on if m[x][y] == 1 else c_off)
 
   # main loop
-  for frame in range(10):
+  for frame in range(1000):
     s_time = time.time()
 
     for step in range(10000):
