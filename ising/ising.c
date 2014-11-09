@@ -118,7 +118,7 @@ int main (int argc, char **argv)
 
     // draw the matrix on the screen
     f = (f + 1) % fade_length;
-    f1 = (f + 64) % fade_length;
+    f1 = (f + 96) % fade_length;
 
     DFBCHECK (primary->SetColor (primary, fades[f].r, fades[f].g, fades[f].b, 0xff));
     DFBCHECK (primary->FillRectangle (primary, 0, 0, screen_width, screen_height));
