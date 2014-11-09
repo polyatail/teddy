@@ -1,4 +1,6 @@
 no-vt
 no-cursor
 hardware
-mode=640x480
+mode=800x600
+depth=32
+#vsync-after
