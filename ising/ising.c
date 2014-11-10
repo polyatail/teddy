@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <math.h>
 #include <unistd.h>
+#include <stdint.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/spi/spidev.h>
 
 #include <directfb.h>
 
@@ -22,6 +26,35 @@ static int height = 120;
         DirectFBErrorFatal( #x, err );                         \
       }                                                        \
   }
+
+int read_spi_channel (int channel)
+{
+  int fd, ret;
+
+  fd = open("/dev/spidev0.0", O_RDWR);
+
+  uint8_t tx[] = {0x01, (channel+8)<<4, 0x00};
+  uint8_t rx[] = {0, 0, 0};
+
+  struct spi_ioc_transfer tr = {
+          .tx_buf = (unsigned long)tx,
+          .rx_buf = (unsigned long)rx,
+          .len = 3,
+          .delay_usecs = 1,
+          .speed_hz = 500000,
+          .bits_per_word = 8,
+  };
+
+  ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
+
+  close(fd);
+
+  if (ret < 1) {
+    return 0;
+  } else {
+    return ((rx[1] & 3) << 8) + rx[2];
+  }
+}
 
 int main (int argc, char **argv)
 {
@@ -110,11 +143,9 @@ int main (int argc, char **argv)
       }
     }
 
-    // try to read a new temperature from stdin
-    if (scanf("%d", &potval) == 1)
-    {
-      temperature = (((float)potval - 512) / 512) * -3;
-    }
+    // read a new temperature from potentiometer over SPI
+    potval = read_spi_channel(0);
+    temperature = (((float)potval - 512) / 512) * -3;
 
     // draw the matrix on the screen
     f = (f + 1) % fade_length;
