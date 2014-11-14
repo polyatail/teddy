@@ -1,13 +1,15 @@
+#include <boost/thread/thread.hpp>
+#include <unistd.h>
 #include <string.h>
 #include <sys/time.h>
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
 
-#define ARRAY_SIZE(ARRAY) (sizeof(ARRAY) / sizeof(ARRAY[0]))
+#define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
-const int nco_bits = 65536;
-const int rate = 44100;
+const double nco_bits = 65536;
+const double rate = 44100;
 const int glissando = 441;
 const int dump_every = 1000;
 
@@ -17,6 +19,12 @@ const int minor_natural[] = {1, 3, 4, 6, 8, 9, 11};
 const int minor_harmonic[] = {1, 3, 4, 6, 8, 9, 12};
 const int major[] = {1, 3, 5, 6, 8, 10, 12};
 
+int l_tar_freq_updated = 0,
+    r_tar_freq_updated = 0;
+
+double l_tar_freq = 440,
+       r_tar_freq = 440;
+
 double GetTimeStamp()
 {
   struct timeval tv;
@@ -24,7 +32,7 @@ double GetTimeStamp()
   return tv.tv_sec + (double)tv.tv_usec / (double)1000000;
 }
 
-int wave_header(int sample_rate)
+void wave_header(int sample_rate)
 {
   char header[] = {
                    0x52, 0x49, 0x46, 0x46,  // 'RIFF'
@@ -51,7 +59,8 @@ int wave_header(int sample_rate)
   fwrite(footer, 1, ARRAY_SIZE(footer), stdout);
 }
 
-void scale_to_freq(const int *scale, double *freq, double starting_freq, int tones, int octaves)
+void scale_to_freq(const int *scale, double *freq, double starting_freq,
+                   int tones, int octaves)
 {
   int i, j, k = 0;
 
@@ -68,20 +77,17 @@ void scale_to_freq(const int *scale, double *freq, double starting_freq, int ton
   }
 }
 
-int main()
+void synth()
 {
-  int i, j, k;
+  int i;
 
-  double poop[4 * ARRAY_SIZE(minor_harmonic)];
-  scale_to_freq(minor_harmonic, poop, 65.406, ARRAY_SIZE(minor_harmonic), 4);
-
-  wave_header(rate);
+  wave_header((int)rate);
 
   fprintf(stderr, "generating LUTs... ");
 
-  short sin_table[nco_bits] = {0, };
+  short sin_table[(int)nco_bits] = {0, };
 
-  for (i = 0; i < nco_bits; i++)
+  for (i = 0; i < (int)nco_bits; i++)
   {
     sin_table[i] = (int)(sin(2 * M_PI * ((double)i / (double)nco_bits)) * 32767);
   }
@@ -95,56 +101,59 @@ int main()
 
   fprintf(stderr, "done\n");
 
-  int l_pre_freq = 300,
-      l_cur_freq = 300,
-      l_cur_increment = nco_bits / (rate / l_cur_freq),
-      l_tar_freq = 300,
+  double l_pre_freq = 440,
+         l_cur_freq = 440;
+
+  int l_cur_increment = ceil(nco_bits / (rate / l_cur_freq)),
       l_count = 0,
       l_trans = glissando;
 
-  int r_pre_freq = 400,
-      r_cur_freq = 400,
-      r_cur_increment = nco_bits / (rate / r_cur_freq),
-      r_tar_freq = 400,
+  double r_pre_freq = 440,
+         r_cur_freq = 440;
+
+  int r_cur_increment = ceil(nco_bits / (rate / r_cur_freq)),
       r_count = 0,
       r_trans = glissando;
 
-  int dump_count = 0,
-      empty_count = 0,
-      idle_count = 1,
-      idle_random = 1;
-
-  int idle = 0;
+  int dump_count = 0;
 
   short frame_buf[dump_every] = {0, };
 
   double fps = 0,
-         s_time = GetTimeStamp(),
-         e_time = 0;
-
-  int k_inc = 1;
-  k = 0;
+         s_time = GetTimeStamp();
 
   while (1)
   {
     if (l_trans < glissando)
     {
-      l_cur_freq = l_pre_freq * (1 - ramp[l_trans]) + l_tar_freq * ramp[l_trans];
-      l_cur_increment = nco_bits / (rate / l_cur_freq);
+      l_cur_freq = l_pre_freq * (1.0 - ramp[l_trans]) + l_tar_freq * ramp[l_trans];
+      l_cur_increment = ceil(nco_bits / (rate / l_cur_freq));
 
       l_trans += 1;
     }
 
+    if (l_tar_freq_updated == 1) {
+      l_tar_freq_updated = 0;
+      l_pre_freq = l_cur_freq;
+      l_trans = 0;
+    }
+
     if (r_trans < glissando)
     {
-      r_cur_freq = r_pre_freq * (1 - ramp[r_trans]) + r_tar_freq * ramp[r_trans];
-      r_cur_increment = nco_bits / (rate / r_cur_freq);
+      r_cur_freq = r_pre_freq * (1.0 - ramp[r_trans]) + r_tar_freq * ramp[r_trans];
+      r_cur_increment = ceil(nco_bits / (rate / r_cur_freq));
 
       r_trans += 1;
     }
 
-    l_count = (l_count + l_cur_increment) % nco_bits;
-    r_count = (r_count + r_cur_increment) % nco_bits;
+    if (r_tar_freq_updated == 1) {
+      r_tar_freq_updated = 0;
+      r_pre_freq = r_cur_freq;
+      r_trans = 0;
+    }
+
+    l_count = (l_count + l_cur_increment) % (int)nco_bits;
+    r_count = (r_count + r_cur_increment) % (int)nco_bits;
 
     frame_buf[dump_count] = sin_table[l_count];
     frame_buf[dump_count+1] = sin_table[r_count];
@@ -164,34 +173,47 @@ int main()
 
     if (dump_count % 100 == 0)
     {
-      fprintf(stderr, "\rl_cur_freq: %4d r_cur_freq: %4d fps: %12.02f empty: %d",
-              l_cur_freq, r_cur_freq, fps, empty_count);
-    }
-
-    if (idle_count == rate * 0.1)
-    {
-      l_pre_freq = l_cur_freq;
-      l_tar_freq = poop[k];
-      l_trans = 0;
-
-      r_pre_freq = r_cur_freq;
-      r_tar_freq = poop[k+3];
-      r_trans = 0;
-
-      k += k_inc;
-
-      if (k+3 >= ARRAY_SIZE(poop) || k == 0)
-      {
-        k_inc *= -1;
-        k += k_inc;
-      }
-
-      idle_count = 0;
-    } else {
-      idle_count += 1;
+      fprintf(stderr, "\rl_cur_freq: %6.02f r_cur_freq: %6.02f fps: %12.02f",
+              l_cur_freq, r_cur_freq, fps);
     }
   }
 }
+
+void control()
+{
+  double poop[4 * ARRAY_SIZE(minor_harmonic)];
+  scale_to_freq(minor_harmonic, poop, 65.406, ARRAY_SIZE(minor_harmonic), 4);
+
+  int i = 0, i_inc = 1;
+
+  while (1)
+  {
+    l_tar_freq_updated = 1;
+    l_tar_freq = poop[i];
+
+    r_tar_freq_updated = 1;
+    r_tar_freq = poop[i+3];
+
+    i += i_inc;
+
+    if (i+3 >= ARRAY_SIZE(poop) || i == 0)
+    {
+      i_inc *= -1;
+      i += i_inc;
+    }
+
+    usleep(100000);
+  }
+}
+
+int main()
+{
+  boost::thread synth_thread(synth);
+  boost::thread control_thread(control);
+  synth_thread.join();
+  control_thread.join();
+}
+
 //def listener():
 //  scales = {"minor_pentatonic":     (1,4,6,8,11),
 //#            "major_pentatonic":     (1,3,5,8,10),
