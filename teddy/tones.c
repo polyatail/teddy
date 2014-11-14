@@ -24,7 +24,7 @@ double GetTimeStamp()
   return tv.tv_sec + (double)tv.tv_usec / (double)1000000;
 }
 
-void wave_header(sample_rate)
+int wave_header(int sample_rate)
 {
   char header[] = {
                    0x52, 0x49, 0x46, 0x46,  // 'RIFF'
