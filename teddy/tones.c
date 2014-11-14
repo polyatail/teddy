@@ -27,8 +27,7 @@ void wave_header(sample_rate)
   fwrite(&mod_sample_rate, 1, sizeof(mod_sample_rate), stdout);
 
   char footer[] = {
-                   0x04, 0x00,              // this is four, i don't know why
-                   0x10, 0x00,              // 16 bits per sample
+                   0x04, 0x00, 0x10, 0x00,  // 16 bits per sample
                    0x64, 0x61, 0x74, 0x61,  // 'data'
                    0xFF, 0xFF, 0xFF, 0xFF,  // size of this data
                   }; 
@@ -45,12 +44,14 @@ int main()
   fprintf(stderr, "generating LUTs... ");
 
   short sin_table[nco_bits] = {0, };
+
   for (i = 0; i < nco_bits; i++)
   {
     sin_table[i] = (int)(sin(2 * M_PI * ((float)i / (float)nco_bits)) * 32767);
   }
 
   float ramp[882] = {0, };
+
   for (i = 0; i < glissando; i++)
   {
     ramp[i] = exp(1 - 1.0 / ((float)i / (float)glissando));
@@ -65,10 +66,10 @@ int main()
       l_count = 0,
       l_trans = glissando;
 
-  int r_pre_freq = 300,
-      r_cur_freq = 300,
+  int r_pre_freq = 400,
+      r_cur_freq = 400,
       r_cur_increment = nco_bits / (rate / r_cur_freq),
-      r_tar_freq = 300,
+      r_tar_freq = 400,
       r_count = 0,
       r_trans = glissando;
 
@@ -96,17 +97,17 @@ int main()
 
     if (dump_count == dump_every)
     {
-      fwrite(frame_buf, 1, dump_every, stdout);
+      fwrite(frame_buf, sizeof(short), dump_every, stdout);
       memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
 
       dump_count = 0;
-      fps = ((float)dump_every / 2) / (time(NULL) - s_time);
+      fps = ((float)dump_every / 2) / (float)(time(NULL) - s_time);
       s_time = time(NULL);
     }
 
     if (dump_count % 100 == 0)
     {
-      fprintf(stderr, "\rl_cur_freq: %d r_cur_freq: %d fps: %f empty: %d",
+      fprintf(stderr, "\rl_cur_freq: %02d r_cur_freq: %02d fps: %f empty: %d",
              l_cur_freq, r_cur_freq, fps, empty_count);
     }
   }
