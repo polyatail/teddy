@@ -1,12 +1,28 @@
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <math.h>
+#include <stdint.h>
+
+#define ARRAY_SIZE(ARRAY) (sizeof(ARRAY) / sizeof(ARRAY[0]))
 
 const int nco_bits = 65536;
-const int rate = 88200;
-const int glissando = 882;
+const int rate = 44100;
+const int glissando = 441;
 const int dump_every = 1000;
+
+const int minor_pentatonic[] = {1, 4, 6, 8, 11};
+const int major_pentatonic[] = {1, 3, 5, 8, 10};
+const int minor_natural[] = {1, 3, 4, 6, 8, 9, 11};
+const int minor_harmonic[] = {1, 3, 4, 6, 8, 9, 12};
+const int major[] = {1, 3, 5, 6, 8, 10, 12};
+
+double GetTimeStamp()
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec + (double)tv.tv_usec / (double)1000000;
+}
 
 void wave_header(sample_rate)
 {
@@ -20,7 +36,7 @@ void wave_header(sample_rate)
                    0x02, 0x00,              // channels (2 for stereo)
                   };
 
-  fwrite(header, 1, sizeof(header) / sizeof(header[0]), stdout);
+  fwrite(header, 1, ARRAY_SIZE(header), stdout);
 
   int mod_sample_rate = sample_rate * 2 * 2;
   fwrite(&sample_rate, 1, sizeof(sample_rate), stdout);
@@ -30,16 +46,36 @@ void wave_header(sample_rate)
                    0x04, 0x00, 0x10, 0x00,  // 16 bits per sample
                    0x64, 0x61, 0x74, 0x61,  // 'data'
                    0xFF, 0xFF, 0xFF, 0xFF,  // size of this data
-                  }; 
+                  };
 
-  fwrite(footer, 1, sizeof(footer) / sizeof(footer[0]), stdout);
+  fwrite(footer, 1, ARRAY_SIZE(footer), stdout);
+}
+
+void scale_to_freq(const int *scale, double *freq, double starting_freq, int tones, int octaves)
+{
+  int i, j, k = 0;
+
+  for (i = 0; i < 12 * octaves; i++)
+  {
+    for (j = 0; j < tones; j++)
+    {
+      if ((i % 12)+1 == scale[j])
+      {
+        freq[k] = starting_freq * pow(pow(2.0, 1.0 / 12.0), i);
+        k += 1;
+      }
+    }
+  }
 }
 
 int main()
 {
-  wave_header(rate);
-
   int i, j, k;
+
+  double poop[4 * ARRAY_SIZE(minor_harmonic)];
+  scale_to_freq(minor_harmonic, poop, 65.406, ARRAY_SIZE(minor_harmonic), 4);
+
+  wave_header(rate);
 
   fprintf(stderr, "generating LUTs... ");
 
@@ -47,14 +83,14 @@ int main()
 
   for (i = 0; i < nco_bits; i++)
   {
-    sin_table[i] = (int)(sin(2 * M_PI * ((float)i / (float)nco_bits)) * 32767);
+    sin_table[i] = (int)(sin(2 * M_PI * ((double)i / (double)nco_bits)) * 32767);
   }
 
-  float ramp[882] = {0, };
+  double ramp[glissando] = {0, };
 
   for (i = 0; i < glissando; i++)
   {
-    ramp[i] = exp(1 - 1.0 / ((float)i / (float)glissando));
+    ramp[i] = exp(1 - 1.0 / ((double)i / (double)glissando));
   }
 
   fprintf(stderr, "done\n");
@@ -82,11 +118,31 @@ int main()
 
   short frame_buf[dump_every] = {0, };
 
-  float fps = 0,
-        s_time = time(NULL);
+  double fps = 0,
+         s_time = GetTimeStamp(),
+         e_time = 0;
+
+  int k_inc = 1;
+  k = 0;
 
   while (1)
   {
+    if (l_trans < glissando)
+    {
+      l_cur_freq = l_pre_freq * (1 - ramp[l_trans]) + l_tar_freq * ramp[l_trans];
+      l_cur_increment = nco_bits / (rate / l_cur_freq);
+
+      l_trans += 1;
+    }
+
+    if (r_trans < glissando)
+    {
+      r_cur_freq = r_pre_freq * (1 - ramp[r_trans]) + r_tar_freq * ramp[r_trans];
+      r_cur_increment = nco_bits / (rate / r_cur_freq);
+
+      r_trans += 1;
+    }
+
     l_count = (l_count + l_cur_increment) % nco_bits;
     r_count = (r_count + r_cur_increment) % nco_bits;
 
@@ -101,54 +157,41 @@ int main()
       memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
 
       dump_count = 0;
-      fps = ((float)dump_every / 2) / (float)(time(NULL) - s_time);
-      s_time = time(NULL);
+
+      fps = (dump_every / 2) / (GetTimeStamp() - s_time);
+      s_time = GetTimeStamp();
     }
 
     if (dump_count % 100 == 0)
     {
-      fprintf(stderr, "\rl_cur_freq: %02d r_cur_freq: %02d fps: %f empty: %d",
-             l_cur_freq, r_cur_freq, fps, empty_count);
+      fprintf(stderr, "\rl_cur_freq: %4d r_cur_freq: %4d fps: %12.02f empty: %d",
+              l_cur_freq, r_cur_freq, fps, empty_count);
+    }
+
+    if (idle_count == rate * 0.1)
+    {
+      l_pre_freq = l_cur_freq;
+      l_tar_freq = poop[k];
+      l_trans = 0;
+
+      r_pre_freq = r_cur_freq;
+      r_tar_freq = poop[k+3];
+      r_trans = 0;
+
+      k += k_inc;
+
+      if (k+3 >= ARRAY_SIZE(poop) || k == 0)
+      {
+        k_inc *= -1;
+        k += k_inc;
+      }
+
+      idle_count = 0;
+    } else {
+      idle_count += 1;
     }
   }
 }
-//    if dump_count == dump_every:
-//      aplay.stdin.write("".join(frame_buf))
-//      frame_buf = [0] * dump_every
-//      dump_count = 0
-//      fps = float(dump_every) / 2 / (time.time() - s_time)
-//      s_time = time.time()
-//
-//    if dump_count % 100 == 0:
-//      sys.stderr.write("\rl_cur_freq: %.01f r_cur_freq: %.01f fps: %-8.01f empty: %d" % (l_cur_freq, r_cur_freq, fps, empty_count))
-//
-//def generate_scales(scales):
-//  # frequencies of notes across several octaves beginning with low C
-//  notes = [65.406]
-//
-//  for i in range(65):
-//    notes.append(notes[i]*2**(1/12.0))
-//
-//  # generate scales
-//  scale_freqs = {}
-//
-//  for scale, kept_notes in scales.items():
-//    scale_freqs[scale] = []
-//    i = 1
-//
-//    for freq in notes:
-//      if i in kept_notes:
-//        scale_freqs[scale].append(freq)
-//
-//      i += 1
-//
-//      if i == 13:
-//        i = 1
-//
-//  scale_freqs["all_freqs"] = range(65, 1400)
-//
-//  return scale_freqs
-//
 //def listener():
 //  scales = {"minor_pentatonic":     (1,4,6,8,11),
 //#            "major_pentatonic":     (1,3,5,8,10),
@@ -216,13 +259,13 @@ int main()
 //      if no_data_counter == 1000:
 //        sys.stderr.write("\nidle: no data from raspi\n")
 //        q.put("idle")
-//  
+//
 //        while True:
 //          if connect() != False:
 //            break
-//  
+//
 //          time.sleep(1)
-//  
+//
 //        sys.stderr.write("\nwakeup: resumed connectiong to raspi\n")
 //        q.put("wakeup")
 //      else:
