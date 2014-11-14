@@ -74,11 +74,14 @@ int main (int argc, char **argv)
 
   // generate color gradient (values here are a, r, g, b)
   DFBColor RED = {255, 255, 0, 0};
+  DFBColor ORANGE = {255, 255, 102, 0};
+  DFBColor YELLOW = {255, 255, 255, 0};
   DFBColor GREEN = {255, 0, 255, 0};
   DFBColor BLUE = {255, 0, 0, 255};
-  DFBColor YELLOW = {255, 255, 255, 0};
+  DFBColor INDIGO = {255, 75, 0, 130};
+  DFBColor VIOLET = {255, 255, 0, 255};
 
-  DFBColor colors[] = {RED, YELLOW, GREEN, BLUE, RED};
+  DFBColor colors[] = {RED, GREEN, INDIGO, ORANGE, VIOLET, YELLOW, GREEN, BLUE, RED};
   DFBColor fades[256 * (sizeof(colors) / sizeof(colors[0]) - 1)];
 
   int i, j = -1, fade_length = sizeof(fades) / sizeof(fades[0]);
@@ -149,7 +152,7 @@ int main (int argc, char **argv)
 
     // draw the matrix on the screen
     f = (f + 1) % fade_length;
-    f1 = (f + 96) % fade_length;
+    f1 = (f + 256) % fade_length;
 
     DFBCHECK (primary->SetColor (primary, fades[f].r, fades[f].g, fades[f].b, 0xff));
     DFBCHECK (primary->FillRectangle (primary, 0, 0, screen_width, screen_height));
