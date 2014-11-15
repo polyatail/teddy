@@ -8,16 +8,10 @@
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
-const double nco_bits = 65536;
-const double rate = 44100;
-const int glissando = 441;
+const double nco_bits = 2 << 15;
+const double rate = 88200;
+const int glissando = 882;
 const int dump_every = 1000;
-
-const int minor_pentatonic[] = {1, 4, 6, 8, 11};
-const int major_pentatonic[] = {1, 3, 5, 8, 10};
-const int minor_natural[] = {1, 3, 4, 6, 8, 9, 11};
-const int minor_harmonic[] = {1, 3, 4, 6, 8, 9, 12};
-const int major[] = {1, 3, 5, 6, 8, 10, 12};
 
 int l_tar_freq_updated = 0,
     r_tar_freq_updated = 0;
@@ -57,24 +51,6 @@ void wave_header(int sample_rate)
                   };
 
   fwrite(footer, 1, ARRAY_SIZE(footer), stdout);
-}
-
-void scale_to_freq(const int *scale, double *freq, double starting_freq,
-                   int tones, int octaves)
-{
-  int i, j, k = 0;
-
-  for (i = 0; i < 12 * octaves; i++)
-  {
-    for (j = 0; j < tones; j++)
-    {
-      if ((i % 12)+1 == scale[j])
-      {
-        freq[k] = starting_freq * pow(pow(2.0, 1.0 / 12.0), i);
-        k += 1;
-      }
-    }
-  }
 }
 
 void synth()
@@ -181,26 +157,15 @@ void synth()
 
 void control()
 {
-  double poop[4 * ARRAY_SIZE(minor_harmonic)];
-  scale_to_freq(minor_harmonic, poop, 65.406, ARRAY_SIZE(minor_harmonic), 4);
+  double freq[2] = {0, };
 
-  int i = 0, i_inc = 1;
-
-  while (1)
+  while (fread(freq, sizeof(double), 2, stdin))
   {
     l_tar_freq_updated = 1;
-    l_tar_freq = poop[i];
+    l_tar_freq = freq[0];
 
     r_tar_freq_updated = 1;
-    r_tar_freq = poop[i+3];
-
-    i += i_inc;
-
-    if (i+3 >= ARRAY_SIZE(poop) || i == 0)
-    {
-      i_inc *= -1;
-      i += i_inc;
-    }
+    r_tar_freq = freq[1];
 
     usleep(100000);
   }
@@ -213,153 +178,3 @@ int main()
   synth_thread.join();
   control_thread.join();
 }
-
-//def listener():
-//  scales = {"minor_pentatonic":     (1,4,6,8,11),
-//#            "major_pentatonic":     (1,3,5,8,10),
-//#            "minor_natural":        (1,3,4,6,8,9,11),
-//            "minor_harmonic":       (1,3,4,6,8,9,12),
-//            "major":                (1,3,5,6,8,10,12)}
-//
-//  colors = {"minor_pentatonic":     (255,0,0,0,255,0),
-//#            "major_pentatonic":     (255,0,0,0,0,255),
-//#            "minor_natural":        (255,0,0,0,255,255),
-//            "minor_harmonic":       (255,0,0,64,128,64),
-//            "major":                (255,0,0,255,0,255),
-//            "all_freqs":            (255,0,0,0,0,255)}
-//
-//  scale = "all_freqs"
-//  add = 2
-//
-//  def connect():
-//    global gyro
-//
-//    gyro = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-//
-//    gyro.settimeout(1)
-//
-//    try:
-//      result = gyro.connect(("192.168.1.1", 9999))
-//    except:
-//      result = False
-//
-//    return result
-//
-//  def freqmod(x, base, add = 0):
-//    if x < 0:
-//      freq = base - ((abs(x+1) if abs(x+1) < 70 else 70)/70) * 220
-//    elif x > 0:
-//      freq = base + ((abs(x+1) if abs(x+1) < 70 else 70)/70) * 440
-//
-//    return all_scales[scale][min(range(len(all_scales[scale])),
-//                                 key=lambda i: abs(all_scales[scale][i]-freq)) + add]
-//
-//  all_scales = generate_scales(scales)
-//  keychange_tstamp = time.time()
-//  idle = False
-//
-//  x, y = 0.1, 0.1
-//  vals = [0] * 100
-//  dy_hist = [0] * 1000
-//
-//  no_data_counter = 0
-//
-//  last_left_freq = 0
-//  last_right_freq = 0
-//
-//  connect()
-//
-//  while True:
-//    s_read, _, _ = select.select([gyro], [], [], 0)
-//
-//    if len(s_read) > 0:
-//      data = gyro.recv(16)
-//      no_data_counter = 0
-//    else:
-//      no_data_counter += 1
-//
-//      if no_data_counter == 1000:
-//        sys.stderr.write("\nidle: no data from raspi\n")
-//        q.put("idle")
-//
-//        while True:
-//          if connect() != False:
-//            break
-//
-//          time.sleep(1)
-//
-//        sys.stderr.write("\nwakeup: resumed connectiong to raspi\n")
-//        q.put("wakeup")
-//      else:
-//        time.sleep(0.001)
-//
-//      continue
-//
-//    x = struct.unpack("d", data[:8])[0]
-//    y = struct.unpack("d", data[8:])[0]
-//
-//    vals.append(y)
-//    vals = vals[1:]
-//
-//    dy = diff(vals)[-1]
-//    dy_hist.append(abs(dy))
-//    dy_hist = dy_hist[1:]
-//
-//    if idle:
-//      try:
-//        gyro.send("".join([struct.pack("B", v) for v in reds[0] + reds[0]]))
-//      except:
-//        pass
-//
-//      reds = reds[1:] + [reds[0]]
-//
-//      # are we no longer idle?
-//      if max(dy_hist) > 2:
-//        idle = False
-//        sys.stderr.write("\nwakeup: gyro detected movement\n")
-//        q.put("wakeup")
-//
-//        try:
-//          gyro.send("".join([struct.pack("B", v) for v in colors[scale]]))
-//        except:
-//          pass
-//    else:
-//      new_left_freq = freqmod(x, 440, 0)
-//      new_right_freq = freqmod(x, 440, add)
-//
-//      if new_left_freq != last_left_freq:
-//        last_left_freq = new_left_freq
-//        q.put((0, new_left_freq))
-//
-//      if new_right_freq != last_right_freq:
-//        last_right_freq = new_right_freq
-//        q.put((1, new_right_freq))
-//
-//      # should we change scales?
-//      if (dy > 60 or dy < -60) and time.time() - keychange_tstamp > 0.5:
-//        scale = all_scales.keys()[(all_scales.keys().index(scale)+1)%len(all_scales.keys())]
-//        keychange_tstamp = time.time()
-//        sys.stderr.write("\nnew scale: %s\n" % scale)
-//
-//        try:
-//          gyro.send("".join([struct.pack("B", v) for v in colors[scale]]))
-//        except:
-//          pass
-//
-//      # should we become idle?
-//      if max(dy_hist) < 2:
-//        reds = [(x, 0, 0) for x in range(1, 255, 5) + range(255, 1, -5)]
-//        sys.stderr.write("\nidle: no movement detected from gyro\n")
-//        q.put("idle")
-//        idle = True
-//
-//    time.sleep(0.001)
-//
-//if __name__ == "__main__":
-//  q = Queue.Queue()
-//
-//  s = threading.Thread(target=synth)
-//  l = threading.Thread(target=listener)
-//
-//  s.start()
-//  l.start()
