@@ -70,7 +70,7 @@ int main (int argc, char **argv)
   DFBCHECK (dfb->CreateSurface( dfb, &dsc, &primary ));
   DFBCHECK (primary->GetSize (primary, &screen_width, &screen_height));
 
-  float temperature = 1.0;
+  float temperature = 1.0, field = 0.0;
 
   // generate color gradient (values here are a, r, g, b)
   DFBColor RED = {255, 255, 0, 0};
@@ -118,7 +118,7 @@ int main (int argc, char **argv)
   }
 
   // main loop
-  int x, y, lx, rx, ly, ry, step, potval, randbox, f = -1, f1 = 0;
+  int x, y, lx, rx, ly, ry, step, potval1, potval2, randbox, f = -1, f1 = 0;
   float energy, randnum;
 
   while (1)
@@ -138,7 +138,7 @@ int main (int argc, char **argv)
       if (y==0) ly = height-1; else ly = y-1;
       if (y==height-1) ry = 0; else ry = y+1;
 
-      energy = (float)copysign(2, temperature) * m[x][y] * (m[lx][y] + m[rx][y] + m[x][ly] + m[x][ry]);
+      energy = 2.0 * field * m[x][y] + (float)copysign(2, temperature) * m[x][y] * (m[lx][y] + m[rx][y] + m[x][ly] + m[x][ry]);
   
       if (energy <= 0 || exp(copysign(1.0, temperature) * -1.0 * energy / temperature) > randnum)
       {
@@ -147,8 +147,12 @@ int main (int argc, char **argv)
     }
 
     // read a new temperature from potentiometer over SPI
-    potval = read_spi_channel(0);
-    temperature = (((float)potval - 512) / 512) * -3;
+    potval1 = read_spi_channel(0);
+    temperature = (((float)potval1 - 512.0) / 512.0) * -3.0;
+
+    // read new field strength
+    potval2 = read_spi_channel(1);
+    field = (((float)potval2 - 512.0) / 512.0) * -2.0;
 
     // draw the matrix on the screen
     f = (f + 1) % fade_length;
