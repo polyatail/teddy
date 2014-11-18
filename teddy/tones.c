@@ -43,6 +43,9 @@ void synth()
   tmp = AFMT_S16_LE;
   ioctl(dsp, SNDCTL_DSP_SETFMT, &tmp);
 
+  tmp = 2;
+  ioctl(dsp, SNDCTL_DSP_POLICY, &tmp);
+
   fprintf(stderr, "generating LUTs... ");
 
   short sin_table[(int)nco_bits] = {0, };
