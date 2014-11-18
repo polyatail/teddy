@@ -1,3 +1,4 @@
+import random
 import sys
 import struct
 import time
@@ -164,13 +165,29 @@ def main():
 
       reds = reds[1:] + [reds[0]]
 
+      if random.random() < 0.10:
+        octave = random.randint(0, 2)
+        new_freq = 2 ** octave * 110 + 2 ** octave * 110 * random.random()
+
+        if random.random() > 0.50:
+          last_left_freq = new_freq
+          sys.stdout.write(struct.pack("d", new_freq))
+          sys.stdout.write(struct.pack("d", last_right_freq))
+        else:
+          last_right_freq = new_freq
+          sys.stdout.write(struct.pack("d", last_left_freq))
+          sys.stdout.write(struct.pack("d", new_freq))
+
+        sys.stdout.flush()
+
       # are we no longer idle?
-      if max(dy_hist) > 2:
+      if max(dy_hist) > 3:
         idle = False
         sys.stderr.write("\nwakeup: gyro detected movement\n")
 
         l_color = colors[scale][:3]
         r_color = colors[scale][3:]
+
     else:
       new_left_freq = freqmod(x, 440, all_scales, scale, 0)
       new_right_freq = freqmod(x, 440, all_scales, scale, add)
@@ -194,7 +211,7 @@ def main():
         r_color = colors[scale][3:]
 
       # should we become idle?
-      if max(dy_hist) < 2:
+      if max(dy_hist) < 3:
         reds = [(x, 0, 0) for x in range(1, 255, 5) + range(255, 1, -5)]
         sys.stderr.write("\nidle: no movement detected from gyro\n")
         idle = True
