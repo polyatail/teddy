@@ -103,13 +103,13 @@ def freqmod(x, base, all_scales, scale, add = 0):
 def main():
   scales = {"minor_pentatonic":     (1,4,6,8,11),
 #            "major_pentatonic":     (1,3,5,8,10),
-#            "minor_natural":        (1,3,4,6,8,9,11),
+            "minor_natural":        (1,3,4,6,8,9,11),
             "minor_harmonic":       (1,3,4,6,8,9,12),
             "major":                (1,3,5,6,8,10,12)}
 
   colors = {"minor_pentatonic":     (255,0,0,0,255,0),
 #            "major_pentatonic":     (255,0,0,0,0,255),
-#            "minor_natural":        (255,0,0,0,255,255),
+            "minor_natural":        (255,0,0,0,255,255),
             "minor_harmonic":       (255,0,0,64,128,64),
             "major":                (255,0,0,255,0,255),
             "all_freqs":            (255,0,0,0,0,255)}
