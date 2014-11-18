@@ -9,9 +9,10 @@
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
 const double nco_bits = 2 << 15;
-const double rate = 88200;
-const int glissando = 882;
+const double rate = 48000;
+const int glissando = 480;
 const int dump_every = 1000;
+const int stats_every = 100000;
 
 int l_tar_freq_updated = 0,
     r_tar_freq_updated = 0;
@@ -91,7 +92,7 @@ void synth()
       r_count = 0,
       r_trans = glissando;
 
-  int dump_count = 0;
+  int dump_count = 0, stats_count = 0;
 
   short frame_buf[dump_every] = {0, };
 
@@ -139,15 +140,23 @@ void synth()
     if (dump_count == dump_every)
     {
       fwrite(frame_buf, sizeof(short), dump_every, stdout);
+      fflush(stdout);
       memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
 
       dump_count = 0;
-
-      fps = (dump_every / 2) / (GetTimeStamp() - s_time);
-      s_time = GetTimeStamp();
     }
 
-    if (dump_count % 100 == 0)
+    if (stats_count == stats_every)
+    {
+      fps = stats_every / (GetTimeStamp() - s_time);
+      s_time = GetTimeStamp();
+
+      stats_count = 0;
+    } else {
+      stats_count += 1;
+    }
+
+    if (stats_count % 100 == 0)
     {
       fprintf(stderr, "\rl_cur_freq: %6.02f r_cur_freq: %6.02f fps: %12.02f",
               l_cur_freq, r_cur_freq, fps);
@@ -166,8 +175,6 @@ void control()
 
     r_tar_freq_updated = 1;
     r_tar_freq = freq[1];
-
-    usleep(100000);
   }
 }
 
