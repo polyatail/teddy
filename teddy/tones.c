@@ -1,3 +1,4 @@
+#include <sys/ioctl.h>
 #include <boost/thread/thread.hpp>
 #include <unistd.h>
 #include <string.h>
@@ -5,6 +6,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
+#include <linux/soundcard.h>
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
@@ -27,38 +29,19 @@ double GetTimeStamp()
   return tv.tv_sec + (double)tv.tv_usec / (double)1000000;
 }
 
-void wave_header(int sample_rate)
-{
-  char header[] = {
-                   0x52, 0x49, 0x46, 0x46,  // 'RIFF'
-                   0x00, 0x00, 0x00, 0x00,  // filesize set to zero
-                   0x57, 0x41, 0x56, 0x45,  // 'WAVE'
-                   0x66, 0x6D, 0x74, 0x20,  // 'fmt '
-                   0x10, 0x00, 0x00, 0x00,  // size of this chunk (16)
-                   0x01, 0x00,              // audio format (1 for PCM)
-                   0x02, 0x00,              // channels (2 for stereo)
-                  };
-
-  fwrite(header, 1, ARRAY_SIZE(header), stdout);
-
-  int mod_sample_rate = sample_rate * 2 * 2;
-  fwrite(&sample_rate, 1, sizeof(sample_rate), stdout);
-  fwrite(&mod_sample_rate, 1, sizeof(mod_sample_rate), stdout);
-
-  char footer[] = {
-                   0x04, 0x00, 0x10, 0x00,  // 16 bits per sample
-                   0x64, 0x61, 0x74, 0x61,  // 'data'
-                   0xFF, 0xFF, 0xFF, 0xFF,  // size of this data
-                  };
-
-  fwrite(footer, 1, ARRAY_SIZE(footer), stdout);
-}
-
 void synth()
 {
-  int i;
+  int i, tmp;
+  FILE * dsp = fopen("/dev/dsp", "wb");
 
-  wave_header((int)rate);
+  tmp = 2;
+  ioctl(fileno(dsp), SNDCTL_DSP_CHANNELS, &tmp);
+
+  tmp = (int)rate;
+  ioctl(fileno(dsp), SNDCTL_DSP_SPEED, &tmp);
+
+  tmp = AFMT_S16_LE;
+  ioctl(fileno(dsp), SNDCTL_DSP_SETFMT, &tmp);
 
   fprintf(stderr, "generating LUTs... ");
 
@@ -139,8 +122,8 @@ void synth()
 
     if (dump_count == dump_every)
     {
-      fwrite(frame_buf, sizeof(short), dump_every, stdout);
-      fflush(stdout);
+      fwrite(frame_buf, sizeof(short), dump_every, dsp);
+      fflush(dsp);
       memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
 
       dump_count = 0;
@@ -158,10 +141,12 @@ void synth()
 
     if (stats_count % 100 == 0)
     {
-      fprintf(stderr, "\rl_cur_freq: %6.02f r_cur_freq: %6.02f fps: %12.02f",
+      fprintf(stderr, "\rl_cur_freq: %7.02f r_cur_freq: %7.02f fps: %8.02f",
               l_cur_freq, r_cur_freq, fps);
     }
   }
+
+  fclose(dsp);
 }
 
 void control()

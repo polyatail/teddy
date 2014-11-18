@@ -1,7 +1,9 @@
+import sys
 import struct
 import time
 import spidev
 import smbus
+from numpy import diff
 from math import sin, pi, exp, sqrt, atan2, degrees, copysign
 
 def twos_compliment(val):
@@ -170,8 +172,8 @@ def main():
         l_color = colors[scale][:3]
         r_color = colors[scale][3:]
     else:
-      new_left_freq = freqmod(x, 440, 0)
-      new_right_freq = freqmod(x, 440, add)
+      new_left_freq = freqmod(x, 440, all_scales, scale, 0)
+      new_right_freq = freqmod(x, 440, all_scales, scale, add)
 
       if new_left_freq != last_left_freq or \
          new_right_freq != last_right_freq:
@@ -180,6 +182,7 @@ def main():
 
         sys.stdout.write(struct.pack("d", new_left_freq))
         sys.stdout.write(struct.pack("d", new_right_freq))
+        sys.stdout.flush()
 
       # should we change scales?
       if (dy > 60 or dy < -60) and time.time() - keychange_tstamp > 0.5:
