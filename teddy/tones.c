@@ -1,4 +1,5 @@
 #include <sys/ioctl.h>
+#include <fcntl.h>
 #include <boost/thread/thread.hpp>
 #include <unistd.h>
 #include <string.h>
@@ -31,17 +32,16 @@ double GetTimeStamp()
 
 void synth()
 {
-  int i, tmp;
-  FILE * dsp = fopen("/dev/dsp", "wb");
+  int i, tmp, dsp = open("/dev/dsp", O_WRONLY);
 
   tmp = 2;
-  ioctl(fileno(dsp), SNDCTL_DSP_CHANNELS, &tmp);
+  ioctl(dsp, SNDCTL_DSP_CHANNELS, &tmp);
 
   tmp = (int)rate;
-  ioctl(fileno(dsp), SNDCTL_DSP_SPEED, &tmp);
+  ioctl(dsp, SNDCTL_DSP_SPEED, &tmp);
 
   tmp = AFMT_S16_LE;
-  ioctl(fileno(dsp), SNDCTL_DSP_SETFMT, &tmp);
+  ioctl(dsp, SNDCTL_DSP_SETFMT, &tmp);
 
   fprintf(stderr, "generating LUTs... ");
 
@@ -122,8 +122,9 @@ void synth()
 
     if (dump_count == dump_every)
     {
-      fwrite(frame_buf, sizeof(short), dump_every, dsp);
-      fflush(dsp);
+      write(dsp, frame_buf, sizeof(short) * dump_every);
+      //fwrite(frame_buf, sizeof(short), dump_every, dsp);
+      //fflush(dsp);
       memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
 
       dump_count = 0;
@@ -146,7 +147,7 @@ void synth()
     }
   }
 
-  fclose(dsp);
+  close(dsp);
 }
 
 void control()
