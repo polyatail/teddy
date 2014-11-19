@@ -1,5 +1,3 @@
-#include <sys/ioctl.h>
-#include <fcntl.h>
 #include <boost/thread/thread.hpp>
 #include <unistd.h>
 #include <string.h>
@@ -7,14 +5,13 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
-#include <linux/soundcard.h>
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
 const double nco_bits = 2 << 15;
 const double rate = 48000;
 const int glissando = 480;
-const int dump_every = 1000;
+const int dump_every = 256;
 const int stats_every = 100000;
 
 int l_tar_freq_updated = 0,
@@ -32,19 +29,7 @@ double GetTimeStamp()
 
 void synth()
 {
-  int i, tmp, dsp = open("/dev/dsp", O_WRONLY);
-
-  tmp = 2;
-  ioctl(dsp, SNDCTL_DSP_CHANNELS, &tmp);
-
-  tmp = (int)rate;
-  ioctl(dsp, SNDCTL_DSP_SPEED, &tmp);
-
-  tmp = AFMT_S16_LE;
-  ioctl(dsp, SNDCTL_DSP_SETFMT, &tmp);
-
-  tmp = 2;
-  ioctl(dsp, SNDCTL_DSP_POLICY, &tmp);
+  int i;
 
   fprintf(stderr, "generating LUTs... ");
 
@@ -125,9 +110,7 @@ void synth()
 
     if (dump_count == dump_every)
     {
-      write(dsp, frame_buf, sizeof(short) * dump_every);
-      //fwrite(frame_buf, sizeof(short), dump_every, dsp);
-      //fflush(dsp);
+      write(fileno(stdout), frame_buf, sizeof(short) * dump_every);
       memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
 
       dump_count = 0;
@@ -149,8 +132,6 @@ void synth()
               l_cur_freq, r_cur_freq, fps);
     }
   }
-
-  close(dsp);
 }
 
 void control()

@@ -216,7 +216,7 @@ def main():
         sys.stderr.write("\nidle: no movement detected from gyro\n")
         idle = True
 
-    time.sleep(0.001)
+    #time.sleep(0.001)
 
 if __name__ == "__main__":
   bus = smbus.SMBus(1)
