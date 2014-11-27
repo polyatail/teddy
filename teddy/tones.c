@@ -5,13 +5,14 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
+#include <portaudio.h>
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
 const double nco_bits = 2 << 15;
 const double rate = 48000;
 const int glissando = 480;
-const int dump_every = 256;
+const int dump_every = 480;
 const int stats_every = 100000;
 
 int l_tar_freq_updated = 0,
@@ -70,6 +71,33 @@ void synth()
   double fps = 0,
          s_time = GetTimeStamp();
 
+  PaStreamParameters outputParameters;
+  PaStream *stream;
+  PaError err;
+
+  err = Pa_Initialize();
+  if( err != paNoError ) goto error;
+
+  outputParameters.device = 2; //Pa_GetDefaultOutputDevice();
+  outputParameters.channelCount = 2;
+  outputParameters.sampleFormat = paInt16;
+  outputParameters.suggestedLatency = Pa_GetDeviceInfo( outputParameters.device )->defaultHighOutputLatency;
+  outputParameters.hostApiSpecificStreamInfo = NULL;
+
+  err = Pa_OpenStream(
+            &stream,
+            NULL,
+            &outputParameters,
+            rate,
+            dump_every,
+            paClipOff,
+            NULL,
+            NULL);
+  if( err != paNoError ) goto error;
+
+  err = Pa_StartStream( stream );
+  if( err != paNoError ) goto error;
+
   while (1)
   {
     if (l_trans < glissando)
@@ -110,7 +138,7 @@ void synth()
 
     if (dump_count == dump_every)
     {
-      write(fileno(stdout), frame_buf, sizeof(short) * dump_every);
+      Pa_WriteStream(stream, frame_buf, dump_every / 2);
       memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
 
       dump_count = 0;
@@ -132,6 +160,9 @@ void synth()
               l_cur_freq, r_cur_freq, fps);
     }
   }
+
+  error:
+  return;
 }
 
 void control()
