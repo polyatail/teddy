@@ -150,7 +150,7 @@ int main()
                       NULL,
                       &outputParameters,
                       rate,
-                      64,
+                      0,
                       paClipOff,
                       teddy_callback,
                       &teddy);
