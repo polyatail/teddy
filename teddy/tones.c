@@ -1,4 +1,3 @@
-#include <boost/thread/thread.hpp>
 #include <unistd.h>
 #include <string.h>
 #include <sys/time.h>
@@ -9,17 +8,34 @@
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
-const double nco_bits = 2 << 15;
-const double rate = 48000;
+const int nco_bits = 2 << 15;
+const int rate = 48000;
 const int glissando = 480;
-const int dump_every = 480;
-const int stats_every = 100000;
 
-int l_tar_freq_updated = 0,
-    r_tar_freq_updated = 0;
+typedef struct
+{
+  int l_tar_freq_updated,
+      r_tar_freq_updated;
 
-double l_tar_freq = 440,
-       r_tar_freq = 440;
+  int l_cur_increment,
+      l_count,
+      l_trans,
+      r_cur_increment,
+      r_count,
+      r_trans;
+
+  double l_pre_freq,
+         l_cur_freq,
+         l_tar_freq,
+         r_pre_freq,
+         r_cur_freq,
+         r_tar_freq;
+
+  short sin_table[nco_bits];
+
+  double ramp[glissando];
+}
+TeddyData;
 
 double GetTimeStamp()
 {
@@ -28,161 +44,131 @@ double GetTimeStamp()
   return tv.tv_sec + (double)tv.tv_usec / (double)1000000;
 }
 
-void synth()
+int teddy_callback(const void *inputBuffer, void *outputBuffer,
+                   unsigned long framesPerBuffer,
+                   const PaStreamCallbackTimeInfo* timeInfo,
+                   PaStreamCallbackFlags statusFlags,
+                   void *userData)
+{
+  unsigned long i;
+
+  TeddyData *data = (TeddyData*)userData;
+  short *out = (short*)outputBuffer;
+
+  for (i = 0; i < framesPerBuffer; i++)
+  {
+    if (data->l_trans < glissando)
+    {
+      data->l_cur_freq = data->l_pre_freq * (1.0 - data->ramp[data->l_trans]) + data->l_tar_freq * data->ramp[data->l_trans];
+      data->l_cur_increment = ceil((double)nco_bits / ((double)rate / data->l_cur_freq));
+
+      data->l_trans += 1;
+    }
+
+    if (data->l_tar_freq_updated == 1) {
+      data->l_tar_freq_updated = 0;
+      data->l_pre_freq = data->l_cur_freq;
+      data->l_trans = 0;
+    }
+
+    if (data->r_trans < glissando)
+    {
+      data->r_cur_freq = data->r_pre_freq * (1.0 - data->ramp[data->r_trans]) + data->r_tar_freq * data->ramp[data->r_trans];
+      data->r_cur_increment = ceil((double)nco_bits / ((double)rate / data->r_cur_freq));
+
+      data->r_trans += 1;
+    }
+
+    if (data->r_tar_freq_updated == 1) {
+      data->r_tar_freq_updated = 0;
+      data->r_pre_freq = data->r_cur_freq;
+      data->r_trans = 0;
+    }
+
+    data->l_count = (data->l_count + data->l_cur_increment) % nco_bits;
+    data->r_count = (data->r_count + data->r_cur_increment) % nco_bits;
+
+    *out++ = data->sin_table[data->l_count];
+    *out++ = data->sin_table[data->r_count];
+  }
+
+  return paContinue;
+}
+
+int main()
 {
   int i;
 
+  TeddyData teddy;
+
+  double freq[2] = {0, };
+
   fprintf(stderr, "generating LUTs... ");
 
-  short sin_table[(int)nco_bits] = {0, };
-
-  for (i = 0; i < (int)nco_bits; i++)
+  for (i = 0; i < nco_bits; i++)
   {
-    sin_table[i] = (int)(sin(2 * M_PI * ((double)i / (double)nco_bits)) * 32767);
+    teddy.sin_table[i] = (int)(sin(2 * M_PI * ((double)i / (double)nco_bits)) * 32767);
   }
-
-  double ramp[glissando] = {0, };
 
   for (i = 0; i < glissando; i++)
   {
-    ramp[i] = exp(1 - 1.0 / ((double)i / (double)glissando));
+    teddy.ramp[i] = exp(1 - 1.0 / ((double)i / (double)glissando));
   }
 
   fprintf(stderr, "done\n");
 
-  double l_pre_freq = 440,
-         l_cur_freq = 440;
+  teddy.l_tar_freq_updated = 0;
+  teddy.l_pre_freq = 440;
+  teddy.l_cur_freq = 440;
+  teddy.l_tar_freq = 440;
+  teddy.l_cur_increment = ceil((double)nco_bits / ((double)rate / teddy.l_cur_freq));
+  teddy.l_count = 0;
+  teddy.l_trans = glissando;
 
-  int l_cur_increment = ceil(nco_bits / (rate / l_cur_freq)),
-      l_count = 0,
-      l_trans = glissando;
-
-  double r_pre_freq = 440,
-         r_cur_freq = 440;
-
-  int r_cur_increment = ceil(nco_bits / (rate / r_cur_freq)),
-      r_count = 0,
-      r_trans = glissando;
-
-  int dump_count = 0, stats_count = 0;
-
-  short frame_buf[dump_every] = {0, };
-
-  double fps = 0,
-         s_time = GetTimeStamp();
+  teddy.r_tar_freq_updated = 0;
+  teddy.r_pre_freq = 440;
+  teddy.r_cur_freq = 440;
+  teddy.r_tar_freq = 440;
+  teddy.r_cur_increment = ceil((double)nco_bits / ((double)rate / teddy.r_cur_freq));
+  teddy.r_count = 0;
+  teddy.r_trans = glissando;
 
   PaStreamParameters outputParameters;
   PaStream *stream;
   PaError err;
 
   err = Pa_Initialize();
-  if( err != paNoError ) goto error;
+  if (err != paNoError) goto error;
 
   outputParameters.device = 2; //Pa_GetDefaultOutputDevice();
   outputParameters.channelCount = 2;
   outputParameters.sampleFormat = paInt16;
-  outputParameters.suggestedLatency = Pa_GetDeviceInfo( outputParameters.device )->defaultHighOutputLatency;
+  outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultHighOutputLatency;
   outputParameters.hostApiSpecificStreamInfo = NULL;
 
-  err = Pa_OpenStream(
-            &stream,
-            NULL,
-            &outputParameters,
-            rate,
-            dump_every,
-            paClipOff,
-            NULL,
-            NULL);
-  if( err != paNoError ) goto error;
+  err = Pa_OpenStream(&stream,
+                      NULL,
+                      &outputParameters,
+                      rate,
+                      64,
+                      paClipOff,
+                      teddy_callback,
+                      &teddy);
+  if (err != paNoError) goto error;
 
-  err = Pa_StartStream( stream );
-  if( err != paNoError ) goto error;
-
-  while (1)
-  {
-    if (l_trans < glissando)
-    {
-      l_cur_freq = l_pre_freq * (1.0 - ramp[l_trans]) + l_tar_freq * ramp[l_trans];
-      l_cur_increment = ceil(nco_bits / (rate / l_cur_freq));
-
-      l_trans += 1;
-    }
-
-    if (l_tar_freq_updated == 1) {
-      l_tar_freq_updated = 0;
-      l_pre_freq = l_cur_freq;
-      l_trans = 0;
-    }
-
-    if (r_trans < glissando)
-    {
-      r_cur_freq = r_pre_freq * (1.0 - ramp[r_trans]) + r_tar_freq * ramp[r_trans];
-      r_cur_increment = ceil(nco_bits / (rate / r_cur_freq));
-
-      r_trans += 1;
-    }
-
-    if (r_tar_freq_updated == 1) {
-      r_tar_freq_updated = 0;
-      r_pre_freq = r_cur_freq;
-      r_trans = 0;
-    }
-
-    l_count = (l_count + l_cur_increment) % (int)nco_bits;
-    r_count = (r_count + r_cur_increment) % (int)nco_bits;
-
-    frame_buf[dump_count] = sin_table[l_count];
-    frame_buf[dump_count+1] = sin_table[r_count];
-
-    dump_count += 2;
-
-    if (dump_count == dump_every)
-    {
-      Pa_WriteStream(stream, frame_buf, dump_every / 2);
-      memset(frame_buf, 0, dump_every * sizeof(frame_buf[0]));
-
-      dump_count = 0;
-    }
-
-    if (stats_count == stats_every)
-    {
-      fps = stats_every / (GetTimeStamp() - s_time);
-      s_time = GetTimeStamp();
-
-      stats_count = 0;
-    } else {
-      stats_count += 1;
-    }
-
-    if (stats_count % 100 == 0)
-    {
-      fprintf(stderr, "\rl_cur_freq: %7.02f r_cur_freq: %7.02f fps: %8.02f",
-              l_cur_freq, r_cur_freq, fps);
-    }
-  }
-
-  error:
-  return;
-}
-
-void control()
-{
-  double freq[2] = {0, };
+  err = Pa_StartStream(stream);
+  if (err != paNoError) goto error;
 
   while (fread(freq, sizeof(double), 2, stdin))
   {
-    l_tar_freq_updated = 1;
-    l_tar_freq = freq[0];
+    teddy.l_tar_freq_updated = 1;
+    teddy.l_tar_freq = freq[0];
 
-    r_tar_freq_updated = 1;
-    r_tar_freq = freq[1];
+    teddy.r_tar_freq_updated = 1;
+    teddy.r_tar_freq = freq[1];
   }
-}
 
-int main()
-{
-  boost::thread synth_thread(synth);
-  boost::thread control_thread(control);
-  synth_thread.join();
-  control_thread.join();
+  error:
+  fprintf(stderr, "error: %d: %s\n", err, Pa_GetErrorText(err));
+  return 1;
 }
