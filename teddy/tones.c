@@ -143,7 +143,7 @@ int main()
   outputParameters.device = 2; //Pa_GetDefaultOutputDevice();
   outputParameters.channelCount = 2;
   outputParameters.sampleFormat = paInt16;
-  outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultHighOutputLatency;
+  outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultLowOutputLatency;
   outputParameters.hostApiSpecificStreamInfo = NULL;
 
   err = Pa_OpenStream(&stream,
