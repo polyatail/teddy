@@ -113,6 +113,11 @@ if __name__ == "__main__":
   dev = spidev.SpiDev()
   dev.open(0,0)
 
+  while True:
+    x, y = get_vals(0x68, bus)
+
+    print "%.02f %.02f" % (x, y)
+
   server = SocketServer.TCPServer((host, port), MyTCPHandler)
   server.serve_forever()
 

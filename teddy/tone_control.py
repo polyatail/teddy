@@ -87,7 +87,7 @@ def generate_scales(scales):
       if i == 13:
         i = 1
 
-  scale_freqs["all_freqs"] = range(65, 1400)
+#  scale_freqs["all_freqs"] = range(65, 1400)
 
   return scale_freqs
 
@@ -101,24 +101,36 @@ def freqmod(x, base, all_scales, scale, add = 0):
                                key=lambda i: abs(all_scales[scale][i]-freq)) + add]
 
 def main():
-  scales = {"minor_pentatonic":     (1,4,6,8,11),
-#            "major_pentatonic":     (1,3,5,8,10),
+  scales = {
+            "minor_pentatonic":     (1,4,6,8,11),
+            "major_pentatonic":     (1,3,5,8,10),
             "minor_natural":        (1,3,4,6,8,9,11),
             "minor_harmonic":       (1,3,4,6,8,9,12),
-            "major":                (1,3,5,6,8,10,12)}
+            "major":                (1,3,5,6,8,10,12),
+           }
 
-  colors = {"minor_pentatonic":     (255,0,0,0,255,0),
-#            "major_pentatonic":     (255,0,0,0,0,255),
+  colors = {
+            "minor_pentatonic":     (255,0,0,0,255,0),
+            "major_pentatonic":     (255,0,0,0,0,255),
             "minor_natural":        (255,0,0,0,255,255),
             "minor_harmonic":       (255,0,0,64,128,64),
             "major":                (255,0,0,255,0,255),
-            "all_freqs":            (255,0,0,0,0,255)}
+#            "all_freqs":            (255,0,0,0,0,255),
+           }
+
+  intervals = {
+               "minor_pentatonic":     2,
+               "major_pentatonic":     4,
+               "minor_natural":        2,
+               "minor_harmonic":       4,
+               "major":                5,
+#               "all_freqs":            0,
+              }
 
   l_color = [255, 0, 0]
   r_color = [0, 0, 255]
 
-  scale = "all_freqs"
-  add = 2
+  scale = scales.keys()[0]
 
   all_scales = generate_scales(scales)
   keychange_tstamp = time.time()
@@ -190,7 +202,7 @@ def main():
 
     else:
       new_left_freq = freqmod(x, 440, all_scales, scale, 0)
-      new_right_freq = freqmod(x, 440, all_scales, scale, add)
+      new_right_freq = freqmod(x, 440, all_scales, scale, intervals[scale])
 
       if new_left_freq != last_left_freq or \
          new_right_freq != last_right_freq:
@@ -200,6 +212,8 @@ def main():
         sys.stdout.write(struct.pack("d", new_left_freq))
         sys.stdout.write(struct.pack("d", new_right_freq))
         sys.stdout.flush()
+
+      #sys.stderr.write("\r%7.02f %7.02f %7.02f" % (dy, x, y))
 
       # should we change scales?
       if (dy > 60 or dy < -60) and time.time() - keychange_tstamp > 0.5:
