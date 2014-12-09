@@ -24,8 +24,14 @@ const uint8_t * scales[] = {minor_pentatonic, major_pentatonic, minor_natural,
 const uint8_t scalesizes[] = {5, 5, 7, 7, 7};
 
 const uint8_t intervals[] = {2, 2, 2, 2, 2};
+const uint32_t colors[] = {255,0,0,0,255,0,
+                           255,0,0,0,0,255,
+                           255,0,0,0,255,255,
+                           255,0,0,64,128,64,
+                           255,0,0,255,0,255};
 
 double notes[72];
+uint8_t scale_num = 0;
 
 void make_notes(double start_freq)
 {
@@ -96,10 +102,10 @@ double gx2freq(double gx, const uint8_t scale[], const uint8_t scalesize,
   }
 
   if (add == 0)
-    fprintf(stderr, "\rgx: %6.2f tilt: %8d note: %2d l_freq: %6.2f",
-            gx, tilt, scale_hit, notes[note_to_play]);
+    fprintf(stderr, " tilt: %8d note: %2d l_freq: %7.2f",
+            tilt, scale_hit, notes[note_to_play]);
   else
-    fprintf(stderr, " r_freq: %6.2f", notes[note_to_play]);
+    fprintf(stderr, " r_freq: %7.2f", notes[note_to_play]);
 
   return notes[note_to_play];
 }
@@ -107,32 +113,87 @@ double gx2freq(double gx, const uint8_t scale[], const uint8_t scalesize,
 int main()
 {
   float gyro[2];
+  float cap[1];
+  float received_data[3];
   double freq[2];
+
+  double held_start = 0;
+
+  double silence[2] = {0.0, 0.0};
 
   make_notes(START_FREQ);
 
   radio.begin();
   radio.setRetries(15, 15);
   radio.setPayloadSize(16);
-//  radio.printDetails();
+  //radio.printDetails();
 
   radio.openWritingPipe(pipes[1]);
   radio.openReadingPipe(1, pipes[0]);
 
   radio.startListening();
 
+  //int32_t tmp[6] = {2863311530, 0, 0, 0, 0 ,0};  // idle code
+
   while (1)
   {
     // receive
     if (radio.available())
     {
-      radio.read(&gyro, 2 * sizeof(float));
+      radio.read(&received_data, 3 * sizeof(float));
+
+      gyro[0] = received_data[0];
+      gyro[1] = received_data[1];
+      cap[0] = received_data[2];
     }
 
-    freq[0] = gx2freq(gyro[0], scales[1], scalesizes[1], NUM_OCTAVES, 0);
-    freq[1] = gx2freq(gyro[0], scales[1], scalesizes[1], NUM_OCTAVES, intervals[1]);
+    fprintf(stderr, "\rgx: %6.2f gy: %6.2f cap: %5d scale: %2d",
+            gyro[0], gyro[1], (uint32_t)cap[0], scale_num);
 
-    fwrite(freq, sizeof(double), 2, stdout);
+    usleep(5000);
+
+    freq[0] = gx2freq(gyro[0], scales[scale_num], scalesizes[scale_num], NUM_OCTAVES, 0);
+    freq[1] = gx2freq(gyro[0], scales[scale_num], scalesizes[scale_num], NUM_OCTAVES, intervals[scale_num]);
+
+    if (cap[0] < 100)
+    {
+      held_start = 0;
+
+      fwrite(silence, sizeof(double), 2, stdout);
+    } else {
+      if (gyro[0] > -10 && gyro[0] < 10 && gyro[1] > -10 && gyro[1] < 10)
+      {
+        if (held_start == 0)
+        {
+          held_start = millis();
+        }
+  
+        if (millis() - held_start >= 2000)
+        {
+          scale_num = (scale_num + 1) % (sizeof(scales) / sizeof(scales[0]));
+
+          radio.stopListening();
+
+          uint32_t *tmp = (uint32_t*)&colors + (6 * sizeof(uint32_t));
+
+          radio.write(tmp, 6 * sizeof(colors[0]));
+
+          for (int i = 0; i < 7; i++)
+          {
+            fprintf(stderr, "\n%d", tmp[i]);
+          }
+
+          radio.startListening();
+
+          held_start = millis();
+        }
+      } else {
+        held_start = 0;
+      }
+
+      fwrite(freq, sizeof(double), 2, stdout);
+    }
+
     fflush(stdout);
 
     usleep(5000);
