@@ -5,12 +5,13 @@
 #include <math.h>
 #include <stdint.h>
 #include <portaudio.h>
+#include <cmath>
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
 
 const int nco_bits = 2 << 15;
 const int rate = 48000;
-const int glissando = 480;
+const int glissando = 960;
 
 typedef struct
 {
@@ -34,6 +35,13 @@ typedef struct
   short sin_table[nco_bits];
 
   double ramp[glissando];
+
+  int vol_updated,
+      vol_trans;
+
+  double pre_volume,
+         cur_volume,
+         tar_volume;
 }
 TeddyData;
 
@@ -85,11 +93,23 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
       data->r_trans = 0;
     }
 
+    if (data->vol_trans < glissando)
+    {
+      data->cur_volume = data->pre_volume + ((double)data->vol_trans / (double)glissando) * (data->tar_volume - data->pre_volume);
+      data->vol_trans += 1;
+    }
+
+    if (data->vol_updated == 1) {
+      data->vol_updated = 0;
+      data->pre_volume = data->cur_volume;
+      data->vol_trans = 0;
+    }
+
     data->l_count = (data->l_count + data->l_cur_increment) % nco_bits;
     data->r_count = (data->r_count + data->r_cur_increment) % nco_bits;
 
-    *out++ = data->sin_table[data->l_count];
-    *out++ = data->sin_table[data->r_count];
+    *out++ = data->sin_table[data->l_count] * data->cur_volume;
+    *out++ = data->sin_table[data->r_count] * data->cur_volume;
   }
 
   return paContinue;
@@ -101,7 +121,7 @@ int main()
 
   TeddyData teddy;
 
-  double freq[2] = {0, };
+  double freq[3] = {0, };
 
   fprintf(stderr, "generating LUTs... ");
 
@@ -133,6 +153,12 @@ int main()
   teddy.r_count = 0;
   teddy.r_trans = glissando;
 
+  teddy.pre_volume = 1.0;
+  teddy.cur_volume = 1.0;
+  teddy.tar_volume = 1.0;
+  teddy.vol_updated = 0;
+  teddy.vol_trans = glissando;
+
   PaStreamParameters outputParameters;
   PaStream *stream;
   PaError err;
@@ -159,13 +185,25 @@ int main()
   err = Pa_StartStream(stream);
   if (err != paNoError) goto error;
 
-  while (fread(freq, sizeof(double), 2, stdin))
+  while (fread(freq, sizeof(double), 3, stdin))
   {
-    teddy.l_tar_freq_updated = 1;
-    teddy.l_tar_freq = freq[0];
+    if (teddy.l_trans == glissando)
+    {
+      teddy.l_tar_freq_updated = 1;
+      teddy.l_tar_freq = freq[0];
+    }
 
-    teddy.r_tar_freq_updated = 1;
-    teddy.r_tar_freq = freq[1];
+    if (teddy.r_trans == glissando)
+    {
+      teddy.r_tar_freq_updated = 1;
+      teddy.r_tar_freq = freq[1];
+    }
+
+    if (teddy.vol_trans == glissando)
+    {
+      teddy.vol_updated = 1;
+      teddy.tar_volume = freq[2];
+    }
   }
 
   error:
