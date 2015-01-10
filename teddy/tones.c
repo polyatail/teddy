@@ -46,9 +46,10 @@ typedef struct
          cur_volume,
          tar_volume;
 
-  SNDFILE *wf;
-  SF_INFO wf_info;
-  int wf_pos;
+  uint32_t wf_pos;
+  uint32_t wf_size;
+  short wf_data[4000000];
+  int wf_pos_reset;
 }
 TeddyData;
 
@@ -115,8 +116,15 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
     data->l_count = (data->l_count + data->l_cur_increment) % nco_bits;
     data->r_count = (data->r_count + data->r_cur_increment) % nco_bits;
 
-    *out++ = data->sin_table[data->l_count] * data->cur_volume;
-    *out++ = data->sin_table[data->r_count] * data->cur_volume;
+    *out++ = (short)(data->sin_table[data->l_count] * data->cur_volume * 0.4f) + (short)(data->wf_data[data->wf_pos] * 0.6f);
+    *out++ = (short)(data->sin_table[data->r_count] * data->cur_volume * 0.4f) + (short)(data->wf_data[data->wf_pos+1] * 0.6f);
+
+    data->wf_pos += 2;
+
+    if (data->wf_pos > data->wf_size)
+    {
+      data->wf_pos = 0;
+    }
   }
 
   return paContinue;
@@ -160,21 +168,26 @@ int main()
   teddy.r_count = 0;
   teddy.r_trans = glissando;
 
-  teddy.pre_volume = 1.0;
-  teddy.cur_volume = 1.0;
-  teddy.tar_volume = 1.0;
+  teddy.pre_volume = 0.0;
+  teddy.cur_volume = 0.0;
+  teddy.tar_volume = 0.0;
   teddy.vol_updated = 0;
   teddy.vol_trans = glissando;
 
   teddy.wf_pos = 0;
-  teddy.wf_info.format = 0;
-  teddy.wf = sf_open(FILE_NAME, SFM_READ, &teddy.wf_info);
+  
+  SF_INFO wf_info;
+  wf_info.format = 0;
+  SNDFILE *wf = sf_open(FILE_NAME, SFM_READ, &wf_info);
 
-  if (!teddy.wf)
+  if (!wf)
   {
     fprintf(stderr, "error opening file: %s", FILE_NAME);
     return 1;
   }
+
+  teddy.wf_size = (uint32_t)wf_info.frames;
+  sf_readf_short(wf, teddy.wf_data, teddy.wf_size);
 
   PaStreamParameters outputParameters;
   PaStream *stream;
@@ -204,6 +217,14 @@ int main()
 
   while (fread(freq, sizeof(double), 3, stdin))
   {
+    //fprintf(stderr, "\n%f %f %f\n", freq[0], freq[1], freq[2]);
+
+    if ((uint32_t)freq[0] == 31337 && (uint32_t)freq[1] == 31337)
+    {
+      teddy.wf_pos = 0;
+      continue;
+    }
+
     if (teddy.l_trans == glissando)
     {
       teddy.l_tar_freq_updated = 1;
