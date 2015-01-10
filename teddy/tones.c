@@ -5,9 +5,12 @@
 #include <math.h>
 #include <stdint.h>
 #include <portaudio.h>
+#include <sndfile.h>
 #include <cmath>
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
+
+#define FILE_NAME "sanfran_cleanloop.wav"
 
 const int nco_bits = 2 << 15;
 const int rate = 48000;
@@ -42,6 +45,10 @@ typedef struct
   double pre_volume,
          cur_volume,
          tar_volume;
+
+  SNDFILE *wf;
+  SF_INFO wf_info;
+  int wf_pos;
 }
 TeddyData;
 
@@ -158,6 +165,16 @@ int main()
   teddy.tar_volume = 1.0;
   teddy.vol_updated = 0;
   teddy.vol_trans = glissando;
+
+  teddy.wf_pos = 0;
+  teddy.wf_info.format = 0;
+  teddy.wf = sf_open(FILE_NAME, SFM_READ, &teddy.wf_info);
+
+  if (!teddy.wf)
+  {
+    fprintf(stderr, "error opening file: %s", FILE_NAME);
+    return 1;
+  }
 
   PaStreamParameters outputParameters;
   PaStream *stream;
