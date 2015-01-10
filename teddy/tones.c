@@ -46,10 +46,11 @@ typedef struct
          cur_volume,
          tar_volume;
 
+  uint32_t wf_fade_start;
+  uint32_t wf_fade_pos;
   uint32_t wf_pos;
   uint32_t wf_size;
   short wf_data[4000000];
-  int wf_pos_reset;
 }
 TeddyData;
 
@@ -67,6 +68,7 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
                    void *userData)
 {
   unsigned long i;
+  double fade_off;
 
   TeddyData *data = (TeddyData*)userData;
   short *out = (short*)outputBuffer;
@@ -116,16 +118,36 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
     data->l_count = (data->l_count + data->l_cur_increment) % nco_bits;
     data->r_count = (data->r_count + data->r_cur_increment) % nco_bits;
 
-    *out++ = (short)(data->sin_table[data->l_count] * data->cur_volume * 0.4f) + (short)(data->wf_data[data->wf_pos] * 0.6f);
-    *out++ = (short)(data->sin_table[data->r_count] * data->cur_volume * 0.4f) + (short)(data->wf_data[data->wf_pos+1] * 0.6f);
+    if (data->wf_fade_start == 0)
+    {
+      fade_off = 1.0;
+    } else {
+      fade_off = (double)(data->wf_fade_pos - data->wf_fade_start) / (double)(data->wf_size - data->wf_fade_start);
+    }
 
-    data->wf_pos += 2;
+    *out++ = (short)(data->sin_table[data->l_count] * data->cur_volume * 0.4f) + \
+             (short)(data->wf_data[data->wf_pos*2] * 0.6f * fade_off) + \
+             (short)(data->wf_data[data->wf_fade_pos*2] * 0.6f * (1.0f-fade_off));
+    *out++ = (short)(data->sin_table[data->r_count] * data->cur_volume * 0.4f) + \
+             (short)(data->wf_data[data->wf_pos*2+1] * 0.6f * fade_off) + \
+             (short)(data->wf_data[data->wf_fade_pos*2+1] * 0.6f * (1.0f-fade_off));
+
+    data->wf_pos += 1;
+
+    if (data->wf_fade_start > 0)
+      data->wf_fade_pos += 1;
 
     if (data->wf_pos > data->wf_size)
-    {
       data->wf_pos = 0;
+
+    if (data->wf_fade_pos > data->wf_size)
+    {
+      data->wf_fade_pos = 0;
+      data->wf_fade_start = 0;
     }
   }
+
+  //fprintf(stderr, "\nwf_pos: %d wf_fade_pos: %d wf_fade_start: %d fade_off: %f\n", data->wf_pos, data->wf_fade_pos, data->wf_fade_start, fade_off);
 
   return paContinue;
 }
@@ -174,6 +196,8 @@ int main()
   teddy.vol_updated = 0;
   teddy.vol_trans = glissando;
 
+  teddy.wf_fade_start = 0;
+  teddy.wf_fade_pos = 0;
   teddy.wf_pos = 0;
   
   SF_INFO wf_info;
@@ -221,6 +245,8 @@ int main()
 
     if ((uint32_t)freq[0] == 31337 && (uint32_t)freq[1] == 31337)
     {
+      teddy.wf_fade_start = teddy.wf_pos;
+      teddy.wf_fade_pos = teddy.wf_pos;
       teddy.wf_pos = 0;
       continue;
     }
