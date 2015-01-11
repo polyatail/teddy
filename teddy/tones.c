@@ -14,7 +14,7 @@
 
 const int nco_bits = 2 << 15;
 const int rate = 48000;
-const int glissando = 960;
+const int glissando = 480;
 
 typedef struct
 {
@@ -105,7 +105,8 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
 
     if (data->vol_trans < glissando)
     {
-      data->cur_volume = data->pre_volume + ((double)data->vol_trans / (double)glissando) * (data->tar_volume - data->pre_volume);
+      //data->cur_volume = data->pre_volume + ((double)data->vol_trans / (double)glissando) * (data->tar_volume - data->pre_volume);
+      data->cur_volume = data->pre_volume * (1.0 - data->ramp[data->vol_trans]) + data->tar_volume * data->ramp[data->vol_trans];
       data->vol_trans += 1;
     }
 
@@ -123,6 +124,7 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
       fade_off = 1.0;
     } else {
       fade_off = (double)(data->wf_fade_pos - data->wf_fade_start) / (double)(data->wf_size - data->wf_fade_start);
+      fade_off = 1.0 / (1.0 + exp(-(fade_off / 0.1 - 5.0)));
     }
 
     *out++ = (short)(data->sin_table[data->l_count] * data->cur_volume * 0.4f) + \
@@ -169,7 +171,7 @@ int main()
 
   for (i = 0; i < glissando; i++)
   {
-    teddy.ramp[i] = exp(1 - 1.0 / ((double)i / (double)glissando));
+    teddy.ramp[i] = 1.0 / (1.0 + exp(-(((double)i / (double)glissando) / 0.1 - 5.0)));
   }
 
   fprintf(stderr, "done\n");
