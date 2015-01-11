@@ -14,7 +14,8 @@
 
 const int nco_bits = 2 << 15;
 const int rate = 48000;
-const int glissando = 480;
+const int glissando = 960;
+const int vol_glissando = 240;
 
 typedef struct
 {
@@ -37,7 +38,8 @@ typedef struct
 
   short sin_table[nco_bits];
 
-  double ramp[glissando];
+  double ramp[glissando],
+         vol_ramp[vol_glissando];
 
   int vol_updated,
       vol_trans;
@@ -103,10 +105,10 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
       data->r_trans = 0;
     }
 
-    if (data->vol_trans < glissando)
+    if (data->vol_trans < vol_glissando)
     {
       //data->cur_volume = data->pre_volume + ((double)data->vol_trans / (double)glissando) * (data->tar_volume - data->pre_volume);
-      data->cur_volume = data->pre_volume * (1.0 - data->ramp[data->vol_trans]) + data->tar_volume * data->ramp[data->vol_trans];
+      data->cur_volume = data->pre_volume * (1.0 - data->vol_ramp[data->vol_trans]) + data->tar_volume * data->vol_ramp[data->vol_trans];
       data->vol_trans += 1;
     }
 
@@ -156,22 +158,25 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
 
 int main()
 {
-  int i;
-
   TeddyData teddy;
 
   double freq[3] = {0, };
 
   fprintf(stderr, "generating LUTs... ");
 
-  for (i = 0; i < nco_bits; i++)
+  for (int i = 0; i < nco_bits; i++)
   {
     teddy.sin_table[i] = (int)(sin(2 * M_PI * ((double)i / (double)nco_bits)) * 32767);
   }
 
-  for (i = 0; i < glissando; i++)
+  for (int i = 0; i < glissando; i++)
   {
     teddy.ramp[i] = 1.0 / (1.0 + exp(-(((double)i / (double)glissando) / 0.1 - 5.0)));
+  }
+
+  for (int i = 0; i < vol_glissando; i++)
+  {
+    teddy.vol_ramp[i] = 1.0 / (1.0 + exp(-(((double)i / (double)vol_glissando) / 0.1 - 5.0)));
   }
 
   fprintf(stderr, "done\n");
@@ -196,7 +201,7 @@ int main()
   teddy.cur_volume = 0.0;
   teddy.tar_volume = 0.0;
   teddy.vol_updated = 0;
-  teddy.vol_trans = glissando;
+  teddy.vol_trans = vol_glissando;
 
   teddy.wf_fade_start = 0;
   teddy.wf_fade_pos = 0;
@@ -265,7 +270,7 @@ int main()
       teddy.r_tar_freq = freq[1];
     }
 
-    if (teddy.vol_trans == glissando)
+    if (teddy.vol_trans == vol_glissando)
     {
       teddy.vol_updated = 1;
       teddy.tar_volume = freq[2];

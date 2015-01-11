@@ -96,6 +96,9 @@ double gx2freq(double gx, double chord[], uint32_t chordsize)
 int main()
 {
   double chord_start = GetTimeStamp();
+  double cur_chord[4];
+  uint32_t cur_chord_size;
+  uint32_t chord_pos = 1;
 
   uint32_t junk = 0;
 
@@ -103,10 +106,6 @@ int main()
   float cap[1];
 
   double freq[3];
-
-  double cur_chord[4];
-  uint32_t cur_chord_size;
-  uint32_t chord_pos = 1;
 
   // setup radio
   radio.begin();
