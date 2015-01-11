@@ -6,6 +6,11 @@
 #include "I2Cdev.h"
 #include "MPU6050.h"
 #include "math.h"
+#include <CapacitiveSensor.h>
+#include "printf.h"
+
+// capacitive sensor
+CapacitiveSensor cs = CapacitiveSensor(2,5);
 
 // radio
 RF24 radio(9, 10);
@@ -17,7 +22,7 @@ int16_t vals[6];
 float gyro[2];
 
 // LEDs
-#define DATA_PIN (5)
+#define DATA_PIN (6)
 #define CLOCK_PIN (7)
 #define LIGHT_COUNT (2)
 
@@ -27,8 +32,10 @@ uint32_t eyecolor;
 #define pinModeFast(x, y) pinMode(x, y)
 #define digitalWriteFast(x, y) digitalWrite(x, y)
 
-int32_t lr_color[6] = {255,0,0,0,255,0};
-int32_t c_color[3] = {0,0,0};
+uint8_t recv_buffer[20] = {0, };
+uint8_t left_color[3] = {255,0,0};
+uint8_t right_color[3] = {0,255,0};
+uint8_t c_color[3] = {0,0,0};
 
 bool idle = 0;
 int8_t idle_inc = 2;
@@ -104,6 +111,10 @@ void setup()
   Serial.begin(9600);
   printf_begin();
   
+  // capacitive sensor
+  cs.set_CS_AutocaL_Millis(120000);
+  //cs.set_CS_Timeout_Millis(10);
+  
   // gyro
   Wire.begin();
   accelgyro.initialize();
@@ -111,8 +122,8 @@ void setup()
   
   // radio
   radio.begin();
-  radio.setRetries(15, 15);
-  radio.setPayloadSize(16);
+  radio.setRetries(0, 0);
+  radio.setPayloadSize(20);
   radio.openWritingPipe(pipes[0]);
   radio.openReadingPipe(1, pipes[1]);
   
@@ -133,12 +144,15 @@ void loop()
   accelgyro.getMotion6(&vals[0], &vals[1], &vals[2], &vals[3], &vals[4], &vals[5]);
   get_vals(vals, &gyro[0], &gyro[1]);
   
-  // send
-  radio.stopListening();
-  radio.write(&gyro, sizeof(gyro));
-  radio.startListening();
+  // capacitive sensor
+  float cap_value =  (float)cs.capacitiveSensor(30);
   
-  delay(1);
+  // send
+  float data_to_send[5] = {31337.0, gyro[0], gyro[1], cap_value, 31337.0};
+  
+  radio.stopListening();
+  radio.write(&data_to_send, 20);
+  radio.startListening();
   
   // figure out eye color
   if (idle)
@@ -165,9 +179,9 @@ void loop()
       tilt = 1.0;
     }
   
-    c_color[0] = (uint8_t)((tilt * (float)lr_color[0]) + ((1.0-tilt) * (float)lr_color[3]));
-    c_color[1] = (uint8_t)((tilt * (float)lr_color[1]) + ((1.0-tilt) * (float)lr_color[4]));
-    c_color[2] = (uint8_t)((tilt * (float)lr_color[2]) + ((1.0-tilt) * (float)lr_color[5]));
+    c_color[0] = (uint32_t)((tilt * (float)left_color[0]) + ((1.0-tilt) * (float)right_color[0]));
+    c_color[1] = (uint32_t)((tilt * (float)left_color[1]) + ((1.0-tilt) * (float)right_color[1]));
+    c_color[2] = (uint32_t)((tilt * (float)left_color[2]) + ((1.0-tilt) * (float)right_color[2]));
   }
   
   for (int i = 0; i < LIGHT_COUNT; i++)
@@ -180,11 +194,23 @@ void loop()
   // receive
   if (radio.available())
   {
-    radio.read(&lr_color, 6 * sizeof(lr_color[0]));
-    
-    if (lr_color == 0)
+    radio.read(&recv_buffer, 20);
+
+    //printf("%d %d %d %d %d %d %d %d\n", recv_buffer[0], recv_buffer[1], recv_buffer[2], recv_buffer[3], recv_buffer[4], recv_buffer[5], recv_buffer[6], recv_buffer[7]);
+
+    if (recv_buffer[0] = 137 && recv_buffer[7] == 137)
     {
-      idle = ~idle; 
+      memcpy(&left_color, recv_buffer+1, 3);
+      memcpy(&right_color, recv_buffer+4, 3);
+
+      if (left_color[0] == 1 && left_color[1] == 2 && left_color[2] == 3)
+      {
+        idle = 1;
+      } else {
+        idle = 0;
+      }
     }
   }
+  
+  delay(10);
 }
