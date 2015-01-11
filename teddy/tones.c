@@ -5,8 +5,12 @@
 #include <math.h>
 #include <stdint.h>
 #include <portaudio.h>
+#include <sndfile.h>
+#include <cmath>
 
 #define ARRAY_SIZE(ARRAY) (int)(sizeof(ARRAY) / sizeof(ARRAY[0]))
+
+#define FILE_NAME "sanfran_cleanloop.wav"
 
 const int nco_bits = 2 << 15;
 const int rate = 48000;
@@ -34,6 +38,19 @@ typedef struct
   short sin_table[nco_bits];
 
   double ramp[glissando];
+
+  int vol_updated,
+      vol_trans;
+
+  double pre_volume,
+         cur_volume,
+         tar_volume;
+
+  uint32_t wf_fade_start;
+  uint32_t wf_fade_pos;
+  uint32_t wf_pos;
+  uint32_t wf_size;
+  short wf_data[4000000];
 }
 TeddyData;
 
@@ -51,6 +68,7 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
                    void *userData)
 {
   unsigned long i;
+  double fade_off;
 
   TeddyData *data = (TeddyData*)userData;
   short *out = (short*)outputBuffer;
@@ -85,12 +103,53 @@ int teddy_callback(const void *inputBuffer, void *outputBuffer,
       data->r_trans = 0;
     }
 
+    if (data->vol_trans < glissando)
+    {
+      //data->cur_volume = data->pre_volume + ((double)data->vol_trans / (double)glissando) * (data->tar_volume - data->pre_volume);
+      data->cur_volume = data->pre_volume * (1.0 - data->ramp[data->vol_trans]) + data->tar_volume * data->ramp[data->vol_trans];
+      data->vol_trans += 1;
+    }
+
+    if (data->vol_updated == 1) {
+      data->vol_updated = 0;
+      data->pre_volume = data->cur_volume;
+      data->vol_trans = 0;
+    }
+
     data->l_count = (data->l_count + data->l_cur_increment) % nco_bits;
     data->r_count = (data->r_count + data->r_cur_increment) % nco_bits;
 
-    *out++ = data->sin_table[data->l_count];
-    *out++ = data->sin_table[data->r_count];
+    if (data->wf_fade_start == 0)
+    {
+      fade_off = 1.0;
+    } else {
+      fade_off = (double)(data->wf_fade_pos - data->wf_fade_start) / (double)(data->wf_size - data->wf_fade_start);
+      fade_off = 1.0 / (1.0 + exp(-(fade_off / 0.1 - 5.0)));
+    }
+
+    *out++ = (short)(data->sin_table[data->l_count] * data->cur_volume * 0.4f) + \
+             (short)(data->wf_data[data->wf_pos*2] * 0.6f * fade_off) + \
+             (short)(data->wf_data[data->wf_fade_pos*2] * 0.6f * (1.0f-fade_off));
+    *out++ = (short)(data->sin_table[data->r_count] * data->cur_volume * 0.4f) + \
+             (short)(data->wf_data[data->wf_pos*2+1] * 0.6f * fade_off) + \
+             (short)(data->wf_data[data->wf_fade_pos*2+1] * 0.6f * (1.0f-fade_off));
+
+    data->wf_pos += 1;
+
+    if (data->wf_fade_start > 0)
+      data->wf_fade_pos += 1;
+
+    if (data->wf_pos > data->wf_size)
+      data->wf_pos = 0;
+
+    if (data->wf_fade_pos > data->wf_size)
+    {
+      data->wf_fade_pos = 0;
+      data->wf_fade_start = 0;
+    }
   }
+
+  //fprintf(stderr, "\nwf_pos: %d wf_fade_pos: %d wf_fade_start: %d fade_off: %f\n", data->wf_pos, data->wf_fade_pos, data->wf_fade_start, fade_off);
 
   return paContinue;
 }
@@ -101,7 +160,7 @@ int main()
 
   TeddyData teddy;
 
-  double freq[2] = {0, };
+  double freq[3] = {0, };
 
   fprintf(stderr, "generating LUTs... ");
 
@@ -112,7 +171,7 @@ int main()
 
   for (i = 0; i < glissando; i++)
   {
-    teddy.ramp[i] = exp(1 - 1.0 / ((double)i / (double)glissando));
+    teddy.ramp[i] = 1.0 / (1.0 + exp(-(((double)i / (double)glissando) / 0.1 - 5.0)));
   }
 
   fprintf(stderr, "done\n");
@@ -132,6 +191,29 @@ int main()
   teddy.r_cur_increment = ceil((double)nco_bits / ((double)rate / teddy.r_cur_freq));
   teddy.r_count = 0;
   teddy.r_trans = glissando;
+
+  teddy.pre_volume = 0.0;
+  teddy.cur_volume = 0.0;
+  teddy.tar_volume = 0.0;
+  teddy.vol_updated = 0;
+  teddy.vol_trans = glissando;
+
+  teddy.wf_fade_start = 0;
+  teddy.wf_fade_pos = 0;
+  teddy.wf_pos = 0;
+  
+  SF_INFO wf_info;
+  wf_info.format = 0;
+  SNDFILE *wf = sf_open(FILE_NAME, SFM_READ, &wf_info);
+
+  if (!wf)
+  {
+    fprintf(stderr, "error opening file: %s", FILE_NAME);
+    return 1;
+  }
+
+  teddy.wf_size = (uint32_t)wf_info.frames;
+  sf_readf_short(wf, teddy.wf_data, teddy.wf_size);
 
   PaStreamParameters outputParameters;
   PaStream *stream;
@@ -159,13 +241,35 @@ int main()
   err = Pa_StartStream(stream);
   if (err != paNoError) goto error;
 
-  while (fread(freq, sizeof(double), 2, stdin))
+  while (fread(freq, sizeof(double), 3, stdin))
   {
-    teddy.l_tar_freq_updated = 1;
-    teddy.l_tar_freq = freq[0];
+    //fprintf(stderr, "\n%f %f %f\n", freq[0], freq[1], freq[2]);
 
-    teddy.r_tar_freq_updated = 1;
-    teddy.r_tar_freq = freq[1];
+    if ((uint32_t)freq[0] == 31337 && (uint32_t)freq[1] == 31337)
+    {
+      teddy.wf_fade_start = teddy.wf_pos;
+      teddy.wf_fade_pos = teddy.wf_pos;
+      teddy.wf_pos = 0;
+      continue;
+    }
+
+    if (teddy.l_trans == glissando)
+    {
+      teddy.l_tar_freq_updated = 1;
+      teddy.l_tar_freq = freq[0];
+    }
+
+    if (teddy.r_trans == glissando)
+    {
+      teddy.r_tar_freq_updated = 1;
+      teddy.r_tar_freq = freq[1];
+    }
+
+    if (teddy.vol_trans == glissando)
+    {
+      teddy.vol_updated = 1;
+      teddy.tar_volume = freq[2];
+    }
   }
 
   error:
